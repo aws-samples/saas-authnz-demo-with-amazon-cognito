@@ -1,0 +1,184 @@
+{
+  "common": {
+    "profile-model": {
+      "userId": "ユーザーID",
+      "email": "メールアドレス",
+      "displayName": "ユーザー名",
+      "role": "ロール",
+      "tenant": "所属テナント",
+      "type": "ユーザータイプ",
+      "nativeUserType": "ネイティブ",
+      "federationUserType": "外部ID",
+      "idToken": "ID Token",
+      "claims": "Claims"
+    },
+    "tenant-model": {
+      "tenantId": "テナントID",
+      "tenantName": "テナント名",
+      "tier": "プラン"
+    },
+    "tenant-idp-model": {
+      "setting": "外部IDプロバイダ設定",
+      "type": "プロバイダ種別",
+      "enabled": "有効",
+      "disabled": "無効",
+      "emailAttributeMapping": "email属性マッピング",
+      "SAML-ACSURL": "ACS URL",
+      "SAML-applicationURN": "アプリケーション URN",
+      "SAML-metadata": "メタデータ",
+      "SAML-URL": "メタデータURLを指定",
+      "SAML-FILE": "直接入力",
+      "OIDC-callback": "Callback URL",
+      "OIDC-issuer": "ISSUER",
+      "OIDC-clientId": "クライアントID",
+      "OIDC-clientSecret": "クライアントシークレット",
+      "OIDC-scope": "スコープ",
+      "OIDC-attributesRequestMethod": "userInfoエンドポイントへのリクエストメソッド"
+    },
+    "error": {
+      "unauthenticated": "認証が必要です",
+      "permissionDenied": "該当操作に必要な権限がありません",
+      "general": "エラーが発生しました"
+    },
+    "modal": {
+      "close": "閉じる",
+      "cancel": "キャンセル",
+      "ok": "OK"
+    },
+    "action": {
+      "signOut": "サインアウト"
+    },
+    "table": {
+      "filteringPlaceholder": "検索"
+    },
+    "copy": {
+      "complete": "クリップボードにコピーしました"
+    },
+    "loading": {
+      "text": "読み込み中..."
+    }
+  },
+  "top-nav": {
+    "menu": {
+      "profile": "プロフィール",
+      "signOut": "サインアウト"
+    }
+  },
+  "sign-in-page": {
+    "general": {
+      "signInTo": "ログイン先",
+      "switchTenant": "別テナントでログイン",
+      "federatedSignIn": "外部 ID でログイン"
+    },
+    "sign-in": {
+      "emailLabel": "メールアドレス",
+      "passwordLabel": "パスワード",
+      "emailPlaceholder": "your email",
+      "passwordPlaceholder": "********",
+      "buttonLabel": "ログイン",
+      "inProgress": "ログイン中",
+      "forgotPassword": "パスワードを忘れた場合",
+      "unknownUserError": "ユーザー名もしくはパスワードが異なります"
+    },
+    "change-password": {
+      "changePassword": "パスワードの変更",
+      "newPassword": "新しいパスワード",
+      "confirmPassword": "パスワード(再度入力)"
+    },
+    "reset-password": {
+      "header": "パスワードの再設定",
+      "email": "メールアドレス",
+      "sendCode": "一時コードの送信",
+      "resendCode": "一時コードの再送信",
+      "backToSignIn": "ログインに戻る",
+      "code": "コード",
+      "submit": "送信",
+      "sending": "送信中",
+      "changing": "変更中"
+    },
+    "error": {
+      "incorrectUsernameOrPassword": "ユーザー名もしくはパスワードが異なります",
+      "passwordMismatch": "パスワードが一致しません"
+    }
+  },
+  "access-denied-page": {
+    "header": {
+      "text": "Access Denied"
+    },
+    "general": {
+      "errorMessage": "アクセスが拒否されました"
+    }
+  },
+  "profile-page": {
+    "header": {
+      "text": "User Profile"
+    },
+    "action": {
+      "changeProfile": "プロフィール変更"
+    },
+    "modal": {
+      "submitChangeProfile": "OK"
+    }
+  },
+  "tenant-page": {
+    "header": {
+      "text": "Tenant Information"
+    },
+    "menu": {
+      "updateTenant": "テナント情報更新"
+    },
+    "modal": {
+      "submitUpdateTenant": "変更"
+    }
+  },
+  "user-manager": {
+    "header": {
+      "text": "ユーザー一覧"
+    },
+    "menu": {
+      "manageUser": "ユーザー管理",
+      "inviteUser": "新規ユーザー招待",
+      "changeRole": "ロール変更",
+      "deleteUser": "ユーザー削除"
+    },
+    "modal": {
+      "submitInviteUser": "招待",
+      "submitChangeRole": "変更",
+      "submitDeleteUser": "削除",
+      "confirmChangeRole": "{{ displayName }} ({{ email }}) のロールを変更します",
+      "confirmDeleteUser": "以下のユーザーを削除しますか？",
+      "deleteUserFailed": "{{ displayName }} ({{ email }}) の削除に失敗しました : {{ reason }}",
+      "deleteUserSucceeded": "{{ displayName }} ({{ email }}) を削除しました"
+    },
+    "table": {
+      "empty": "ユーザーが存在しません"
+    }
+  },
+  "tenant-idp-page": {
+    "header": {
+      "text": "Manage Identity Provider"
+    },
+    "menu": {
+      "registerIdp": "外部IDプロバイダ登録",
+      "updateIdp": "設定変更",
+      "deregisterIdp": "設定を削除",
+      "manageIdp": "外部IDプロバイダ管理"
+    },
+    "modal": {
+      "submitRegisterIdp": "登録",
+      "submitUpdateIdp": "更新",
+      "submitDeregisterIdp": "削除",
+      "confirmDeregisterIdp": "外部IDプロバイダを削除しますか？"
+    },
+    "general": {
+      "notFound": "外部IDプロバイダ設定はありません"
+    }    
+  },
+  "api": {
+    "error": {
+      "unauthenticated": "認証が必要です",
+      "permissionDenied": "該当操作に必要な権限がありません",
+      "general": "エラーが発生しました"
+    }
+  }
+}

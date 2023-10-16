@@ -1,0 +1,96 @@
+{
+  "Comment": "TenantAuthConfigService",
+  "StartAt": "GetParams",
+  "States": {
+    "GetParams": {
+      "Type": "Task",
+      "Next": "ValidInput?",
+      "Parameters": {
+        "Name": "/saas-auth-demo/params"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+      "ResultPath": "$.Params",
+      "ResultSelector": {
+        "Data.$": "States.StringToJson($.Parameter.Value)"
+      }
+    },
+    "ValidInput?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.tenantId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.tenantId",
+              "IsString": true
+            }
+          ],
+          "Comment": "Yes",
+          "Next": "GetTenantAuthConfig"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "InvalidRequestError": {
+      "Type": "Fail",
+      "Error": "InvalidRequestError",
+      "Cause": "invalid request parameters"
+    },
+    "GetTenantAuthConfig": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.tenantId)",
+          "sk": "authconfig"
+        }
+      },
+      "ResultPath": "$.GetAuthConfigResult",
+      "Next": "TenantExists?"
+    },
+    "TenantExists?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.GetAuthConfigResult.Item",
+          "IsPresent": true,
+          "Comment": "Yes",
+          "Next": "FormatOutput"
+        }
+      ],
+      "Default": "TenantNotFoundError"
+    },
+    "FormatOutput": {
+      "Type": "Pass",
+      "Parameters": {
+        "tenantId.$": "States.ArrayGetItem(States.StringSplit($.GetAuthConfigResult.Item.pk.S, '#'), 1)",
+        "userpool": {
+          "region.$": "$.GetAuthConfigResult.Item.region.S",
+          "userPoolId.$": "$.GetAuthConfigResult.Item.userPoolId.S",
+          "userPoolWebClientId.$": "$.GetAuthConfigResult.Item.appClientId.S",
+          "oauth": {
+            "domain.$": "States.Format('{}.auth.{}.amazoncognito.com', $.GetAuthConfigResult.Item.domain.S, $.GetAuthConfigResult.Item.region.S)",
+            "scope": ["openid"],
+            "responseType": "code"
+          }
+        },
+        "flags": {
+          "federationEnabled.$": "$.GetAuthConfigResult.Item.federationEnabled.BOOL"
+        }
+      },
+      "Next": "Success"
+    },
+    "Success": {
+      "Type": "Succeed"
+    },
+    "TenantNotFoundError": {
+      "Type": "Fail",
+      "Error": "TenantNotFoundError",
+      "Cause": "given tenantId not found"
+    }
+  }
+}

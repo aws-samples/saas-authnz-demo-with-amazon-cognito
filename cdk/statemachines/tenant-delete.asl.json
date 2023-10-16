@@ -1,0 +1,324 @@
+{
+  "Comment": "TenantDeleteService",
+  "StartAt": "GetParams",
+  "States": {
+    "GetParams": {
+      "Type": "Task",
+      "Next": "IsInputValid?",
+      "Parameters": {
+        "Name": "/saas-auth-demo/params"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+      "ResultPath": "$.Params",
+      "ResultSelector": {
+        "Data.$": "States.StringToJson($.Parameter.Value)"
+      }
+    },
+    "IsInputValid?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.tenantId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.tenantId",
+              "IsString": true
+            }
+          ],
+          "Comment": "Yes",
+          "Next": "GetTenantAuthConfig"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "InvalidRequestError": {
+      "Type": "Fail",
+      "Error": "InvalidRequestError",
+      "Cause": "invalid request error"
+    },
+    "GetTenantAuthConfig": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.tenantId)",
+          "sk.$": "States.Format('authconfig')"
+        }
+      },
+      "Next": "TenantExists?",
+      "ResultPath": "$.GetTenantAuthConfigResult"
+    },
+    "TenantExists?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.GetTenantAuthConfigResult.Item",
+          "IsPresent": true,
+          "Comment": "Yes",
+          "Next": "FormatAuthConfig"
+        }
+      ],
+      "Default": "TenantNotFoundError"
+    },
+    "FormatAuthConfig": {
+      "Type": "Pass",
+      "Next": "QueryTenantUser",
+      "Parameters": {
+        "UserPoolId.$": "$.GetTenantAuthConfigResult.Item.userPoolId.S",
+        "AppClinetId.$": "$.GetTenantAuthConfigResult.Item.appClientId.S"
+      },
+      "ResultPath": "$.AuthConfig"
+    },
+    "QueryTenantUser": {
+      "Type": "Task",
+      "Next": "Map",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "KeyConditionExpression": "pk = :tenant and begins_with(sk, :membership)",
+        "ExpressionAttributeValues": {
+          ":tenant": {
+            "S.$": "States.Format('tenant#{}', $.tenantId)"
+          },
+          ":membership": {
+            "S": "membership#"
+          }
+        }
+      },
+      "Resource": "arn:aws:states:::aws-sdk:dynamodb:query",
+      "ResultPath": "$.QueryTenantUserResult"
+    },
+    "Map": {
+      "Type": "Map",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "AdminDeleteUser",
+        "States": {
+          "AdminDeleteUser": {
+            "Type": "Task",
+            "Parameters": {
+              "UserPoolId.$": "$.userPoolId",
+              "Username.$": "$.cognitoUserName"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:adminDeleteUser",
+            "Next": "DeleteTenantUser",
+            "ResultPath": null,
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "CognitoIdentityProvider.UserNotFoundException"
+                ],
+                "Next": "DeleteTenantUser",
+                "ResultPath": "$.error"
+              }
+            ]
+          },
+          "DeleteTenantUser": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:deleteItem",
+            "Parameters": {
+              "TableName.$": "$.DDBTable",
+              "Key": {
+                "pk": {
+                  "S.$": "States.Format('tenant#{}', $.tenantId)"
+                },
+                "sk": {
+                  "S.$": "States.Format('membership#{}', $.userId)"
+                }
+              }
+            },
+            "Next": "Wait"
+          },
+          "Wait": {
+            "Type": "Wait",
+            "Seconds": 1,
+            "End": true
+          }
+        }
+      },
+      "Next": "hasNextPage?",
+      "ItemsPath": "$.QueryTenantUserResult.Items",
+      "MaxConcurrency": 5,
+      "ResultPath": null,
+      "ItemSelector": {
+        "DDBTable.$": "$.Params.Data.DDBTable",
+        "tenantId.$": "$.tenantId",
+        "userId.$": "States.ArrayGetItem(States.StringSplit($$.Map.Item.Value.sk.S, '#'), 1)",
+        "cognitoUserName.$": "$$.Map.Item.Value.cognitoUserName.S",
+        "userPoolId.$": "$.AuthConfig.UserPoolId"
+      }
+    },
+    "hasNextPage?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.QueryTenantUserResult.LastEvaluatedKey",
+          "IsPresent": true,
+          "Comment": "Yes",
+          "Next": "QueryNextTenantUser"
+        }
+      ],
+      "Default": "GetUserPoolSetting"
+    },
+    "GetUserPoolSetting": {
+      "Type": "Pass",
+      "Next": "DeleteTenantSetting",
+      "Parameters": {
+        "UserPoolId.$": "$.GetTenantAuthConfigResult.Item.userPoolId.S",
+        "AppClinetId.$": "$.GetTenantAuthConfigResult.Item.appClientId.S"
+      },
+      "ResultPath": "$.UserPool"
+    },
+    "DeleteTenantSetting": {
+      "Type": "Task",
+      "Next": "DeleteUserPoolClient",
+      "Parameters": {
+        "TransactItems": [
+          {
+            "Delete": {
+              "TableName.$": "$.Params.Data.DDBTable",
+              "Key": {
+                "pk": {
+                  "S.$": "States.Format('tenant#{}', $.tenantId)"
+                },
+                "sk": {
+                  "S": "metadata"
+                }
+              }
+            }
+          },
+          {
+            "Delete": {
+              "TableName.$": "$.Params.Data.DDBTable",
+              "Key": {
+                "pk": {
+                  "S.$": "States.Format('tenant#{}', $.tenantId)"
+                },
+                "sk": {
+                  "S": "authconfig"
+                }
+              }
+            }
+          },
+          {
+            "Update": {
+              "TableName.$": "$.Params.Data.DDBTable",
+              "Key": {
+                "pk": {
+                  "S": "userpool"
+                },
+                "sk": {
+                  "S.$": "$.UserPool.UserPoolId"
+                }
+              },
+              "UpdateExpression": "SET numClients = numClients - :n",
+              "ExpressionAttributeValues": {
+                ":n": {
+                  "N": "1"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Resource": "arn:aws:states:::aws-sdk:dynamodb:transactWriteItems",
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.Timeout"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "InternalServerError",
+          "ResultPath": "$.Error"
+        }
+      ]
+    },
+    "DeleteUserPoolClient": {
+      "Type": "Task",
+      "Next": "DeleteIdentityProvider",
+      "Parameters": {
+        "ClientId.$": "$.UserPool.AppClinetId",
+        "UserPoolId.$": "$.UserPool.UserPoolId"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:deleteUserPoolClient",
+      "ResultPath": null
+    },
+    "DeleteIdentityProvider": {
+      "Type": "Task",
+      "Next": "Success",
+      "Parameters": {
+        "ProviderName.$": "States.Format('external-idp-{}', $.tenantId)",
+        "UserPoolId.$": "$.UserPool.UserPoolId"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:deleteIdentityProvider",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "CognitoIdentityProvider.ResourceNotFoundException"
+          ],
+          "Comment": "IdpNotFound",
+          "Next": "Success"
+        },
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Comment": "Rollback",
+          "ResultPath": "$.error",
+          "Next": "InternalServerError"
+        }
+      ]
+    },
+    "Success": {
+      "Type": "Pass",
+      "End": true,
+      "Result": {
+        "result": "success"
+      }
+    },
+    "TenantNotFoundError": {
+      "Type": "Fail",
+      "Error": "TenantNotFoundError",
+      "Cause": "given tenantId not found"
+    },
+    "InternalServerError": {
+      "Type": "Fail",
+      "Error": "InternalServerError",
+      "Cause": "internal server error"
+    },
+    "QueryNextTenantUser": {
+      "Type": "Task",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "KeyConditionExpression": "pk = :tenant and begins_with(sk, :membership)",
+        "ExpressionAttributeValues": {
+          ":tenant": {
+            "S.$": "States.Format('tenant#{}', $.tenantId)"
+          },
+          ":membership": {
+            "S": "membership#"
+          }
+        },
+        "ExclusiveStartKey.$": "$.QueryTenantUserResult.LastEvaluatedKey"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:dynamodb:query",
+      "Next": "Map",
+      "ResultPath": "$.QueryTenantUserResult"
+    }
+  }
+}

@@ -1,0 +1,255 @@
+{
+  "Comment": "UserInviteService",
+  "StartAt": "GetParams",
+  "States": {
+    "GetParams": {
+      "Type": "Task",
+      "Next": "ValidInput?",
+      "Parameters": {
+        "Name": "/saas-auth-demo/params"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+      "ResultPath": "$.Params",
+      "ResultSelector": {
+        "Data.$": "States.StringToJson($.Parameter.Value)"
+      }
+    },
+    "ValidInput?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.tenantId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.tenantId",
+              "IsString": true
+            },
+            {
+              "Variable": "$.email",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.email",
+              "IsString": true
+            },
+            {
+              "Variable": "$.email",
+              "StringMatches": "*@*"
+            },
+            {
+              "Variable": "$.displayName",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.displayName",
+              "IsString": true
+            },
+            {
+              "Not": {
+                "Variable": "$.email",
+                "StringMatches": "*/*"
+              }
+            },
+            {
+              "Variable": "$.role",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.role",
+              "IsString": true
+            }
+          ],
+          "Comment": "Yes",
+          "Next": "RoleValidation"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "RoleValidation": {
+      "Type": "Pass",
+      "Next": "IsRoleValid?",
+      "Parameters": {
+        "result.$": "States.ArrayContains($.Params.Data.AllowedRoles, $.role)"
+      },
+      "ResultPath": "$.RoleValidationResult"
+    },
+    "IsRoleValid?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.RoleValidationResult.result",
+          "BooleanEquals": true,
+          "Next": "GetTenantAuthconfig",
+          "Comment": "Yes"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "InvalidRequestError": {
+      "Type": "Fail",
+      "Error": "InvalidRequestError",
+      "Cause": "invalid request parameters"
+    },
+    "GetTenantAuthconfig": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.tenantId)",
+          "sk.$": "States.Format('authconfig')"
+        }
+      },
+      "Next": "TenantExists?",
+      "ResultPath": "$.GetTenantAuthConfigResult"
+    },
+    "TenantExists?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.GetTenantAuthConfigResult.Item",
+          "IsPresent": true,
+          "Comment": "Yes",
+          "Next": "GetUserPoolSetting"
+        }
+      ],
+      "Default": "TenantNotFoundError"
+    },
+    "TenantNotFoundError": {
+      "Type": "Fail",
+      "Error": "TenantNotFoundError",
+      "Cause": "given tenantId not found"
+    },
+    "UserExistError": {
+      "Type": "Fail",
+      "Error": "UserExistError",
+      "Cause": "user already exists"
+    },
+    "GetUserPoolSetting": {
+      "Type": "Pass",
+      "Next": "AdminCreateUser",
+      "Parameters": {
+        "UserPoolId.$": "$.GetTenantAuthConfigResult.Item.userPoolId.S",
+        "AppClinetId.$": "$.GetTenantAuthConfigResult.Item.appClientId.S"
+      },
+      "ResultPath": "$.AuthConfig"
+    },
+    "AdminCreateUser": {
+      "Type": "Task",
+      "Next": "SaveTenantUser",
+      "Parameters": {
+        "UserPoolId.$": "$.AuthConfig.UserPoolId",
+        "Username.$": "States.Format('{}#{}', $.tenantId, $.email)",
+        "UserAttributes": [
+          {
+            "Name": "email",
+            "Value.$": "$.email"
+          },
+          {
+            "Name": "email_verified",
+            "Value": "True"
+          }
+        ]
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:adminCreateUser",
+      "ResultPath": "$.AdminCreateUserResult",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "CognitoIdentityProvider.UsernameExistsException"
+          ],
+          "Next": "UserExistError"
+        },
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "InternalServerError"
+        }
+      ],
+      "ResultSelector": {
+        "userIdList.$": "$.User.Attributes[?(@.Name == sub)].Value",
+        "userData.$": "$.User"
+      }
+    },
+    "SaveTenantUser": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:putItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Item": {
+          "pk": {
+            "S.$": "States.Format('tenant#{}', $.tenantId)"
+          },
+          "sk": {
+            "S.$": "States.Format('membership#{}', $.AdminCreateUserResult.userIdList[0])"
+          },
+          "displayName": {
+            "S.$": "$.displayName"
+          },
+          "role": {
+            "S.$": "$.role"
+          },
+          "email": {
+            "S.$": "$.email"
+          },
+          "type": {
+            "S": "NATIVE_USER"
+          },
+          "cognitoUserName": {
+            "S.$": "States.Format('{}#{}', $.tenantId, $.email)"
+          }
+        }
+      },
+      "Next": "Success",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.Timeout"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "AdminDeleteUser",
+          "ResultPath": "$.error"
+        }
+      ],
+      "ResultPath": null
+    },
+    "Success": {
+      "Type": "Pass",
+      "Parameters": {
+        "tenantId.$": "$.tenantId",
+        "userId.$": "$.AdminCreateUserResult.userIdList[0]",
+        "displayName.$": "$.displayName",
+        "email.$": "$.email",
+        "role.$": "$.role",
+        "type": "NATIVE_USER"
+      },
+      "End": true
+    },
+    "AdminDeleteUser": {
+      "Type": "Task",
+      "Next": "InternalServerError",
+      "Parameters": {
+        "UserPoolId.$": "$.AuthConfig.UserPoolId",
+        "Username.$": "States.Format('{}#{}', $.tenantId, $.email)"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:adminDeleteUser"
+    },
+    "InternalServerError": {
+      "Type": "Fail",
+      "Error": "InternalServerError"
+    }
+  }
+}

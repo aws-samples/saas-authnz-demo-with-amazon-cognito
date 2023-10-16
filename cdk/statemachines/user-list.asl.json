@@ -1,0 +1,119 @@
+{
+  "Comment": "UserListService",
+  "StartAt": "GetParams",
+  "States": {
+    "GetParams": {
+      "Type": "Task",
+      "Next": "ValidInput?",
+      "Parameters": {
+        "Name": "/saas-auth-demo/params"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+      "ResultPath": "$.Params",
+      "ResultSelector": {
+        "Data.$": "States.StringToJson($.Parameter.Value)"
+      }
+    },
+    "ValidInput?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.tenantId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.tenantId",
+              "IsString": true
+            }
+          ],
+          "Comment": "Yes",
+          "Next": "GetTenantAuthconfig"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "InvalidRequestError": {
+      "Type": "Fail",
+      "Error": "InvalidRequestError",
+      "Cause": "invalid request parameters"
+    },
+    "GetTenantAuthconfig": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.tenantId)",
+          "sk.$": "States.Format('authconfig')"
+        }
+      },
+      "Next": "TenantExists?",
+      "ResultPath": "$.GetTenantAuthConfigResult"
+    },
+    "TenantExists?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.GetTenantAuthConfigResult.Item",
+          "IsPresent": true,
+          "Comment": "Yes",
+          "Next": "QueryTenantUser"
+        }
+      ],
+      "Default": "TenantNotFoundError"
+    },
+    "QueryTenantUser": {
+      "Type": "Task",
+      "Next": "MapAllUser",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "KeyConditionExpression": "pk = :tenant and begins_with(sk, :membership)",
+        "ExpressionAttributeValues": {
+          ":tenant": {
+            "S.$": "States.Format('tenant#{}', $.tenantId)"
+          },
+          ":membership": {
+            "S": "membership#"
+          }
+        }
+      },
+      "Resource": "arn:aws:states:::aws-sdk:dynamodb:query",
+      "ResultPath": "$.QueryTenantUserResult"
+    },
+    "MapAllUser": {
+      "Type": "Map",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "FormatOutput",
+        "States": {
+          "FormatOutput": {
+            "Type": "Pass",
+            "End": true,
+            "Parameters": {
+              "tenantId.$": "States.ArrayGetItem(States.StringSplit($.pk.S, '#'), 1)",
+              "userId.$": "States.ArrayGetItem(States.StringSplit($.sk.S, '#'), 1)",
+              "displayName.$": "$.displayName.S",
+              "email.$": "$.email.S",
+              "role.$": "$.role.S",
+              "type.$": "$.type.S"
+            }
+          }
+        }
+      },
+      "Next": "Success",
+      "ItemsPath": "$.QueryTenantUserResult.Items"
+    },
+    "Success": {
+      "Type": "Succeed"
+    },
+    "TenantNotFoundError": {
+      "Type": "Fail",
+      "Error": "TenantNotFoundError",
+      "Cause": "given tenantId not found"
+    }
+  }
+}

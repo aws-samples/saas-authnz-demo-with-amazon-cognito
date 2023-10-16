@@ -1,0 +1,227 @@
+{
+  "Comment": "TenantUpdateService",
+  "StartAt": "GetInput",
+  "States": {
+    "GetInput": {
+      "Type": "Pass",
+      "Next": "GetParams",
+      "Parameters": {
+        "input.$": "$"
+      }
+    },
+    "GetParams": {
+      "Type": "Task",
+      "Next": "ValidInput?",
+      "Parameters": {
+        "Name": "/saas-auth-demo/params"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+      "ResultPath": "$.Params",
+      "ResultSelector": {
+        "Data.$": "States.StringToJson($.Parameter.Value)"
+      }
+    },
+    "ValidInput?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.input.tenantId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.input.tenantId",
+              "IsString": true
+            },
+            {
+              "Variable": "$.input.tenantName",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.input.tenantName",
+              "IsString": true
+            },
+            {
+              "Not": {
+                "Variable": "$.input.tier",
+                "IsPresent": true
+              }
+            }
+          ],
+          "Next": "GetTenant",
+          "Comment": "Yes (tier not exists)"
+        },
+        {
+          "And": [
+            {
+              "Variable": "$.input.tenantId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.input.tenantId",
+              "IsString": true
+            },
+            {
+              "Variable": "$.input.tier",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.input.tier",
+              "IsString": true
+            },
+            {
+              "Or": [
+                {
+                  "Not": {
+                    "Variable": "$.input.tenantName",
+                    "IsPresent": true
+                  }
+                },
+                {
+                  "And": [
+                    {
+                      "Variable": "$.input.tenantName",
+                      "IsPresent": true
+                    },
+                    {
+                      "Variable": "$.input.tenantName",
+                      "IsString": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "Next": "TierValidation",
+          "Comment": "Yes (tier exists)"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "TierValidation": {
+      "Type": "Pass",
+      "Next": "IsTierValid?",
+      "Parameters": {
+        "result.$": "States.ArrayContains($.Params.Data.AllowedTiers, $.input.tier)"
+      },
+      "ResultPath": "$.TierValidationResult"
+    },
+    "IsTierValid?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.TierValidationResult.result",
+          "BooleanEquals": true,
+          "Comment": "Yes",
+          "Next": "GetTenant"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "InvalidRequestError": {
+      "Type": "Fail",
+      "Error": "InvalidRequestError",
+      "Cause": "invalid request parameters"
+    },
+    "GetTenant": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.input.tenantId)",
+          "sk": "metadata"
+        }
+      },
+      "ResultPath": "$.GetTenantResult",
+      "Next": "TenantExists?"
+    },
+    "TenantExists?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.GetTenantResult.Item",
+          "IsPresent": true,
+          "Comment": "Yes",
+          "Next": "ExtractCurrentTenantAttributes"
+        }
+      ],
+      "Default": "TenantNotFoundError"
+    },
+    "ExtractCurrentTenantAttributes": {
+      "Type": "Pass",
+      "Next": "OverrideTenantAttribetes",
+      "Parameters": {
+        "tenantName.$": "$.GetTenantResult.Item.name.S",
+        "tier.$": "$.GetTenantResult.Item.tier.S"
+      },
+      "ResultPath": "$.CurrentTenantAttributes"
+    },
+    "OverrideTenantAttribetes": {
+      "Type": "Pass",
+      "Next": "UpdateTenant",
+      "Parameters": {
+        "attributes.$": "States.JsonMerge($.CurrentTenantAttributes, $.input, false)"
+      },
+      "ResultPath": "$.UpdateTenantAttributes"
+    },
+    "UpdateTenant": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.input.tenantId)",
+          "sk": "metadata"
+        },
+        "UpdateExpression": "SET #tier = :tier, #name = :tenantName",
+        "ExpressionAttributeValues": {
+          ":tenantName": {
+            "S.$": "$.UpdateTenantAttributes.attributes.tenantName"
+          },
+          ":tier": {
+            "S.$": "$.UpdateTenantAttributes.attributes.tier"
+          }
+        },
+        "ExpressionAttributeNames": {
+          "#tier": "tier",
+          "#name": "name"
+        }
+      },
+      "Next": "FormatOutput",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": null,
+          "Next": "InternalServerError"
+        }
+      ],
+      "ResultPath": null
+    },
+    "InternalServerError": {
+      "Type": "Fail",
+      "Error": "InternalServerError",
+      "Cause": "InternalServerError"
+    },
+    "FormatOutput": {
+      "Type": "Pass",
+      "Parameters": {
+        "tenantId.$": "States.ArrayGetItem(States.StringSplit($.GetTenantResult.Item.pk.S, '#'), 1)",
+        "tenantName.$": "$.UpdateTenantAttributes.attributes.tenantName",
+        "tier.$": "$.UpdateTenantAttributes.attributes.tier"
+      },
+      "Next": "Success"
+    },
+    "Success": {
+      "Type": "Succeed"
+    },
+    "TenantNotFoundError": {
+      "Type": "Fail",
+      "Error": "TenantNotFoundError",
+      "Cause": "given tenantId not found"
+    }
+  }
+}

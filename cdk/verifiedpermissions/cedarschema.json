@@ -1,0 +1,134 @@
+{
+  "ApiAccess": {
+      "entityTypes": {
+          "User": {
+              "memberOfTypes": [],
+              "shape": {
+                  "attributes": {
+                      "sub": {
+                          "type": "String",
+                          "required": true
+                      },
+                      "userRole": {
+                          "required": true,
+                          "type": "String"
+                      },
+                      "tenantTier": {
+                          "required": true,
+                          "type": "String"
+                      },
+                      "tenantId": {
+                          "required": true,
+                          "type": "String"
+                      }
+                  },
+                  "type": "Record"
+              }
+          },
+          "Resource": {
+              "memberOfTypes": [],
+              "shape": {
+                  "attributes": {
+                      "pathParameters": {
+                          "required": true,
+                          "attributes": {
+                            "userId": {
+                                "required": false,
+                                "type": "String"
+                            }
+                          },
+                          "type": "Record"
+                      }
+                  },
+                  "type": "Record"
+              }
+          }
+      },
+      "actions": {
+        "DescribeTenantInfo": {
+            "appliesTo": {
+                "context": { "type": "Record", "attributes": {}},
+                "resourceTypes": ["Resource"],
+                "principalTypes": ["User"]
+            }
+        },
+        "UpdateTenantInfo": {
+            "appliesTo": {
+                "context": { "type": "Record", "attributes": {}},
+                "resourceTypes": ["Resource"],
+                "principalTypes": ["User"]
+            }
+        },
+        "ListUser": {
+            "appliesTo": {
+                "context": { "type": "Record", "attributes": {}},
+                "resourceTypes": ["Resource"],
+                "principalTypes": ["User"]
+            }
+        },
+        "InviteUser": {
+            "appliesTo": {
+                "context": { "type": "Record", "attributes": {}},
+                "resourceTypes": ["Resource"],
+                "principalTypes": ["User"]
+            }
+        },
+        "DescribeUser": {
+            "appliesTo": {
+                "context": { "type": "Record", "attributes": {}},
+                "resourceTypes": ["Resource"],
+                "principalTypes": ["User"]
+            }
+        },
+        "UpdateUserProfile": {
+            "appliesTo": {
+                "context": { "type": "Record", "attributes": {}},
+                "resourceTypes": ["Resource"],
+                "principalTypes": ["User"]
+            }
+        },
+        "UpdateUserRole": {
+            "appliesTo": {
+                "context": { "type": "Record", "attributes": {}},
+                "resourceTypes": ["Resource"],
+                "principalTypes": ["User"]
+            }
+        },
+        "DeleteUser": {
+            "appliesTo": {
+                "context": { "type": "Record", "attributes": {}},
+                "resourceTypes": ["Resource"],
+                "principalTypes": ["User"]
+            }
+        },
+        "CreateIdpMapping": {
+            "appliesTo": {
+                "context": { "type": "Record", "attributes": {}},
+                "resourceTypes": ["Resource"],
+                "principalTypes": ["User"]
+            }
+        },
+        "DescribeIdpMapping": {
+            "appliesTo": {
+                "context": { "type": "Record", "attributes": {}},
+                "resourceTypes": ["Resource"],
+                "principalTypes": ["User"]
+            }
+        },
+        "UpdateIdpMapping": {
+            "appliesTo": {
+                "context": { "type": "Record", "attributes": {}},
+                "resourceTypes": ["Resource"],
+                "principalTypes": ["User"]
+            }
+        },
+        "DeleteIdpMapping": {
+            "appliesTo": {
+                "context": { "type": "Record", "attributes": {}},
+                "resourceTypes": ["Resource"],
+                "principalTypes": ["User"]
+            }
+        }
+      }
+  }
+}

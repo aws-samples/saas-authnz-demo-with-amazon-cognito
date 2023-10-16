@@ -1,0 +1,182 @@
+{
+  "Comment": "TenantDeregisterIdpService",
+  "StartAt": "GetParams",
+  "States": {
+    "GetParams": {
+      "Type": "Task",
+      "Next": "IsInputValid?",
+      "Parameters": {
+        "Name": "/saas-auth-demo/params"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+      "ResultPath": "$.Params",
+      "ResultSelector": {
+        "Data.$": "States.StringToJson($.Parameter.Value)"
+      }
+    },
+    "InvalidRequestError": {
+      "Type": "Fail",
+      "Error": "InvalidRequestError",
+      "Cause": "invalid request parameters"
+    },
+    "TenantNotFoundError": {
+      "Type": "Fail",
+      "Error": "TenantNotFoundError",
+      "Cause": "given tenantId not found"
+    },
+    "IsInputValid?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.tenantId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.tenantId",
+              "IsString": true
+            }
+          ],
+          "Comment": "Yes",
+          "Next": "GetTenantAuthconfig"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "GetTenantAuthconfig": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.tenantId)",
+          "sk.$": "States.Format('authconfig')"
+        }
+      },
+      "Next": "TenantExists?",
+      "ResultPath": "$.GetTenantAuthConfigResult"
+    },
+    "TenantExists?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.GetTenantAuthConfigResult.Item",
+          "IsPresent": true,
+          "Next": "IdentityProviderSettingExists?",
+          "Comment": "Yes"
+        }
+      ],
+      "Default": "TenantNotFoundError"
+    },
+    "IdentityProviderSettingExists?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.GetTenantAuthConfigResult.Item.federationEnabled.BOOL",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.GetTenantAuthConfigResult.Item.federationEnabled.BOOL",
+              "IsBoolean": true
+            },
+            {
+              "Variable": "$.GetTenantAuthConfigResult.Item.federationEnabled.BOOL",
+              "BooleanEquals": true
+            }
+          ],
+          "Comment": "Yes",
+          "Next": "GetUserPoolSetting"
+        }
+      ],
+      "Default": "SettingNotExistsError"
+    },
+    "SettingNotExistsError": {
+      "Type": "Fail",
+      "Error": "SettingNotExistsError",
+      "Cause": "Identity provider settings does not exist"
+    },
+    "GetUserPoolSetting": {
+      "Type": "Pass",
+      "Next": "ResetUserPoolClient",
+      "ResultPath": "$.UserPool",
+      "Parameters": {
+        "UserPoolId.$": "$.GetTenantAuthConfigResult.Item.userPoolId.S",
+        "AppClinetId.$": "$.GetTenantAuthConfigResult.Item.appClientId.S",
+        "ProviderName.$": "States.Format('external-idp-{}', $.tenantId)"
+      }
+    },
+    "ResetUserPoolClient": {
+      "Type": "Task",
+      "Parameters": {
+        "ClientId.$": "$.UserPool.AppClinetId",
+        "UserPoolId.$": "$.UserPool.UserPoolId",
+        "WriteAttributes": ["custom:emailFromIdp"],
+        "ReadAttributes": ["custom:emailFromIdp", "email", "email_verified"],
+        "PreventUserExistenceErrors": "ENABLED"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:updateUserPoolClient",
+      "Next": "DeleteIdentityProvider",
+      "ResultPath": null
+    },
+    "DeleteIdentityProvider": {
+      "Type": "Task",
+      "Next": "DynamoDB UpdateItem",
+      "Parameters": {
+        "ProviderName.$": "$.UserPool.ProviderName",
+        "UserPoolId.$": "$.UserPool.UserPoolId"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:deleteIdentityProvider",
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "DynamoDB UpdateItem",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "DynamoDB UpdateItem": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.tenantId)",
+          "sk.$": "States.Format('authconfig')"
+        },
+        "UpdateExpression": "SET federationEnabled = :federationEnabled",
+        "ExpressionAttributeValues": {
+          ":federationEnabled": {
+            "BOOL": false
+          }
+        }
+      },
+      "Next": "Success",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "InternalServerError"
+        }
+      ]
+    },
+    "Success": {
+      "Type": "Pass",
+      "End": true,
+      "Result": {
+        "result": "success"
+      }
+    },
+    "InternalServerError": {
+      "Type": "Fail",
+      "Error": "InternalServerError",
+      "Cause": "server side error"
+    }
+  }
+}

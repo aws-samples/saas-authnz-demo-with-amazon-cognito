@@ -1,0 +1,259 @@
+{
+  "Comment": "TenantUpdateIdpService",
+  "StartAt": "GetParams",
+  "States": {
+    "GetParams": {
+      "Type": "Task",
+      "Next": "IsInputValid?",
+      "Parameters": {
+        "Name": "/saas-auth-demo/params"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+      "ResultPath": "$.Params",
+      "ResultSelector": {
+        "Data.$": "States.StringToJson($.Parameter.Value)"
+      }
+    },
+    "InvalidRequestError": {
+      "Type": "Fail",
+      "Error": "InvalidRequestError",
+      "Cause": "invalid request parameters"
+    },
+    "TenantNotFoundError": {
+      "Type": "Fail",
+      "Error": "TenantNotFoundError",
+      "Cause": "given tenantId not found"
+    },
+    "IsInputValid?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.tenantId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.tenantId",
+              "IsString": true
+            },
+            {
+              "Variable": "$.providerDetails",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.emailMappingAttribute",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.emailMappingAttribute",
+              "IsString": true
+            }
+          ],
+          "Comment": "Yes",
+          "Next": "GetTenantAuthconfig"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "GetTenantAuthconfig": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.tenantId)",
+          "sk.$": "States.Format('authconfig')"
+        }
+      },
+      "Next": "TenantExists?",
+      "ResultPath": "$.GetTenantAuthConfigResult"
+    },
+    "TenantExists?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.GetTenantAuthConfigResult.Item",
+          "IsPresent": true,
+          "Next": "IdentityProviderSettingExists?",
+          "Comment": "Yes"
+        }
+      ],
+      "Default": "TenantNotFoundError"
+    },
+    "IdentityProviderSettingExists?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.GetTenantAuthConfigResult.Item.federationEnabled.BOOL",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.GetTenantAuthConfigResult.Item.federationEnabled.BOOL",
+              "IsBoolean": true
+            },
+            {
+              "Variable": "$.GetTenantAuthConfigResult.Item.federationEnabled.BOOL",
+              "BooleanEquals": true
+            }
+          ],
+          "Comment": "Yes",
+          "Next": "ParseUserPoolSetting"
+        }
+      ],
+      "Default": "SettingNotExistsError"
+    },
+    "SettingNotExistsError": {
+      "Type": "Fail",
+      "Error": "SettingNotExistsError",
+      "Cause": "Identity provider setting does not exist"
+    },
+    "ParseUserPoolSetting": {
+      "Type": "Pass",
+      "Next": "DescribeIdentityProvider",
+      "ResultPath": "$.UserPool",
+      "Parameters": {
+        "UserPoolId.$": "$.GetTenantAuthConfigResult.Item.userPoolId.S",
+        "AppClinetId.$": "$.GetTenantAuthConfigResult.Item.appClientId.S",
+        "ProviderName.$": "States.Format('external-idp-{}', $.tenantId)"
+      }
+    },
+    "DescribeIdentityProvider": {
+      "Type": "Task",
+      "Parameters": {
+        "ProviderName.$": "$.UserPool.ProviderName",
+        "UserPoolId.$": "$.UserPool.UserPoolId"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:describeIdentityProvider",
+      "Next": "SelectProviderType",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Comment": "Rollback",
+          "ResultPath": "$.error",
+          "Next": "InternalServerError"
+        }
+      ],
+      "ResultPath": "$.DescribeIdentityProviderResult"
+    },
+    "SelectProviderType": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.DescribeIdentityProviderResult.IdentityProvider.ProviderType",
+              "StringEquals": "SAML"
+            },
+            {
+              "Variable": "$.providerDetails.MetadataURL",
+              "IsPresent": true
+            }
+          ],
+          "Comment": "SAML with MetadataURL",
+          "Next": "SetProviderDetailsParameterForSAMLMetadataURL"
+        },
+        {
+          "And": [
+            {
+              "Variable": "$.DescribeIdentityProviderResult.IdentityProvider.ProviderType",
+              "StringEquals": "SAML"
+            },
+            {
+              "Variable": "$.providerDetails.MetadataFile",
+              "IsPresent": true
+            }
+          ],
+          "Comment": "SAML with MetadataFile",
+          "Next": "SetProviderDetailsParameterForSAMLMetadataFile"
+        },
+        {
+          "Variable": "$.DescribeIdentityProviderResult.IdentityProvider.ProviderType",
+          "StringEquals": "OIDC",
+          "Comment": "OIDC",
+          "Next": "SetProviderDetailsParameterForOIDC"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "SetProviderDetailsParameterForSAMLMetadataURL": {
+      "Type": "Pass",
+      "Next": "UpdateIdentityProvider",
+      "ResultPath": "$.ProviderDetailsParameter",
+      "Parameters": {
+        "MetadataURL.$": "$.providerDetails.MetadataURL"
+      }
+    },
+    "SetProviderDetailsParameterForSAMLMetadataFile": {
+      "Type": "Pass",
+      "Next": "UpdateIdentityProvider",
+      "ResultPath": "$.ProviderDetailsParameter",
+      "Parameters": {
+        "MetadataFile.$": "$.providerDetails.MetadataFile"
+      }
+    },
+    "SetProviderDetailsParameterForOIDC": {
+      "Type": "Pass",
+      "Next": "UpdateIdentityProvider",
+      "ResultPath": "$.ProviderDetailsParameter",
+      "Parameters": {
+        "client_id.$": "$.providerDetails.client_id",
+        "client_secret.$": "$.providerDetails.client_secret",
+        "attributes_request_method.$": "$.providerDetails.attributes_request_method",
+        "oidc_issuer.$": "$.providerDetails.oidc_issuer",
+        "authorize_scopes.$": "$.providerDetails.authorize_scopes"
+      }
+    },
+    "UpdateIdentityProvider": {
+      "Type": "Task",
+      "Parameters": {
+        "UserPoolId.$": "$.UserPool.UserPoolId",
+        "ProviderName.$": "$.UserPool.ProviderName",
+        "ProviderDetails.$": "$.ProviderDetailsParameter",
+        "AttributeMapping": {
+          "custom:emailFromIdp.$": "$.emailMappingAttribute"
+        }
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:updateIdentityProvider",
+      "Next": "Success",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "CognitoIdentityProvider.InvalidParameterException"
+          ],
+          "Comment": "InvalidParameter",
+          "ResultPath": "$.error",
+          "Next": "InvalidRequestError"
+        },
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Comment": "Rollback",
+          "ResultPath": "$.error",
+          "Next": "InternalServerError"
+        }
+      ],
+      "ResultPath": null
+    },
+    "Success": {
+      "Type": "Pass",
+      "End": true,
+      "Parameters": {
+        "tenantId.$": "$.tenantId",
+        "providerType.$": "$.DescribeIdentityProviderResult.IdentityProvider.ProviderType",
+        "providerDetails.$": "$.ProviderDetailsParameter",
+        "emailMappingAttribute.$": "$.emailMappingAttribute"
+      }
+    },
+    "InternalServerError": {
+      "Type": "Fail",
+      "Error": "InternalServerError",
+      "Cause": "server side error"
+    }
+  }
+}

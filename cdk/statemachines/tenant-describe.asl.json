@@ -1,0 +1,85 @@
+{
+  "Comment": "TenantDescribeService",
+  "StartAt": "GetParams",
+  "States": {
+    "GetParams": {
+      "Type": "Task",
+      "Next": "ValidInput?",
+      "Parameters": {
+        "Name": "/saas-auth-demo/params"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+      "ResultPath": "$.Params",
+      "ResultSelector": {
+        "Data.$": "States.StringToJson($.Parameter.Value)"
+      }
+    },
+    "ValidInput?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.tenantId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.tenantId",
+              "IsString": true
+            }
+          ],
+          "Comment": "Yes",
+          "Next": "GetTenant"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "InvalidRequestError": {
+      "Type": "Fail",
+      "Error": "InvalidRequestError",
+      "Cause": "invalid request parameters"
+    },
+    "GetTenant": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.tenantId)",
+          "sk": "metadata"
+        }
+      },
+      "ResultPath": "$.GetTenantResult",
+      "Next": "TenantExists?"
+    },
+    "TenantExists?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.GetTenantResult.Item",
+          "IsPresent": true,
+          "Comment": "Yes",
+          "Next": "FormatOutput"
+        }
+      ],
+      "Default": "TenantNotFoundError"
+    },
+    "FormatOutput": {
+      "Type": "Pass",
+      "Parameters": {
+        "tenantId.$": "States.ArrayGetItem(States.StringSplit($.GetTenantResult.Item.pk.S, '#'), 1)",
+        "tenantName.$": "$.GetTenantResult.Item.name.S",
+        "tier.$": "$.GetTenantResult.Item.tier.S"
+      },
+      "Next": "Success"
+    },
+    "Success": {
+      "Type": "Succeed"
+    },
+    "TenantNotFoundError": {
+      "Type": "Fail",
+      "Error": "TenantNotFoundError",
+      "Cause": "given tenantId not found"
+    }
+  }
+}

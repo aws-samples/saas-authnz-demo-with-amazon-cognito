@@ -1,0 +1,243 @@
+{
+  "Comment": "UserUpdateService",
+  "StartAt": "GetInput",
+  "States": {
+    "GetInput": {
+      "Type": "Pass",
+      "Next": "GetParams",
+      "Parameters": {
+        "input.$": "$"
+      }
+    },
+    "GetParams": {
+      "Type": "Task",
+      "Next": "ValidInput?",
+      "Parameters": {
+        "Name": "/saas-auth-demo/params"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+      "ResultPath": "$.Params",
+      "ResultSelector": {
+        "Data.$": "States.StringToJson($.Parameter.Value)"
+      }
+    },
+    "ValidInput?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.input.tenantId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.input.tenantId",
+              "IsString": true
+            },
+            {
+              "Variable": "$.input.userId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.input.userId",
+              "IsString": true
+            },
+            {
+              "Variable": "$.input.displayName",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.input.displayName",
+              "IsString": true
+            },
+            {
+              "Variable": "$.input.role",
+              "IsPresent": false
+            }
+          ],
+          "Next": "GetTenantUser",
+          "Comment": "Yes (role not exists)"
+        },
+        {
+          "And": [
+            {
+              "Variable": "$.input.tenantId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.input.tenantId",
+              "IsString": true
+            },
+            {
+              "Variable": "$.input.userId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.input.userId",
+              "IsString": true
+            },
+            {
+              "Variable": "$.input.role",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.input.role",
+              "IsString": true
+            },
+            {
+              "Or": [
+                {
+                  "Not": {
+                    "Variable": "$.input.displayName",
+                    "IsPresent": true
+                  }
+                },
+                {
+                  "And": [
+                    {
+                      "Variable": "$.input.displayName",
+                      "IsPresent": true
+                    },
+                    {
+                      "Variable": "$.input.displayName",
+                      "IsString": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "Next": "RoleValidation",
+          "Comment": "Yes (role exists)"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "RoleValidation": {
+      "Type": "Pass",
+      "Next": "IsRoleValid?",
+      "Parameters": {
+        "result.$": "States.ArrayContains($.Params.Data.AllowedRoles, $.input.role)"
+      },
+      "ResultPath": "$.RoleValidationResult"
+    },
+    "IsRoleValid?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.RoleValidationResult.result",
+          "BooleanEquals": true,
+          "Comment": "Yes",
+          "Next": "GetTenantUser"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "InvalidRequestError": {
+      "Type": "Fail",
+      "Error": "InvalidRequestError",
+      "Cause": "invalid request parameters"
+    },
+    "GetTenantUser": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.input.tenantId)",
+          "sk.$": "States.Format('membership#{}', $.input.userId)"
+        }
+      },
+      "ResultPath": "$.GetTenantUserResult",
+      "Next": "UserExists?"
+    },
+    "UserExists?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.GetTenantUserResult.Item",
+          "IsPresent": true,
+          "Comment": "Yes",
+          "Next": "ExtractCurrentUserAttributes"
+        }
+      ],
+      "Default": "UserNotFoundError"
+    },
+    "ExtractCurrentUserAttributes": {
+      "Type": "Pass",
+      "Next": "OverrideUserAttribetes",
+      "Parameters": {
+        "displayName.$": "$.GetTenantUserResult.Item.displayName.S",
+        "role.$": "$.GetTenantUserResult.Item.role.S"
+      },
+      "ResultPath": "$.CurrentUserAttributes"
+    },
+    "OverrideUserAttribetes": {
+      "Type": "Pass",
+      "Next": "UpdateTenantUser",
+      "Parameters": {
+        "attributes.$": "States.JsonMerge($.CurrentUserAttributes, $.input, false)"
+      },
+      "ResultPath": "$.UpdateUserAttributes"
+    },
+    "UpdateTenantUser": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.input.tenantId)",
+          "sk.$": "States.Format('membership#{}', $.input.userId)"
+        },
+        "UpdateExpression": "SET #role = :role,  displayName = :displayName",
+        "ExpressionAttributeValues": {
+          ":displayName": {
+            "S.$": "$.UpdateUserAttributes.attributes.displayName"
+          },
+          ":role": {
+            "S.$": "$.UpdateUserAttributes.attributes.role"
+          }
+        },
+        "ExpressionAttributeNames": {
+          "#role": "role"
+        }
+      },
+      "Next": "FormatOutput",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": null,
+          "Next": "InternalServerError"
+        }
+      ],
+      "ResultPath": null
+    },
+    "InternalServerError": {
+      "Type": "Fail",
+      "Error": "InternalServerError",
+      "Cause": "InternalServerError"
+    },
+    "FormatOutput": {
+      "Type": "Pass",
+      "Parameters": {
+        "tenantId.$": "States.ArrayGetItem(States.StringSplit($.GetTenantUserResult.Item.pk.S, '#'), 1)",
+        "userId.$": "States.ArrayGetItem(States.StringSplit($.GetTenantUserResult.Item.sk.S, '#'), 1)",
+        "displayName.$": "$.UpdateUserAttributes.attributes.displayName",
+        "email.$": "$.GetTenantUserResult.Item.email.S",
+        "role.$": "$.UpdateUserAttributes.attributes.role",
+        "type.$": "$.GetTenantUserResult.Item.type.S"
+      },
+      "Next": "Success"
+    },
+    "Success": {
+      "Type": "Succeed"
+    },
+    "UserNotFoundError": {
+      "Type": "Fail",
+      "Error": "UserNotFoundError",
+      "Cause": "given tenantId or userId not found"
+    }
+  }
+}

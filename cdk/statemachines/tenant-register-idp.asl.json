@@ -1,0 +1,340 @@
+{
+  "Comment": "TenantRegisterIdpService",
+  "StartAt": "GetParams",
+  "States": {
+    "GetParams": {
+      "Type": "Task",
+      "Next": "IsInputValid?",
+      "Parameters": {
+        "Name": "/saas-auth-demo/params"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+      "ResultPath": "$.Params",
+      "ResultSelector": {
+        "Data.$": "States.StringToJson($.Parameter.Value)"
+      }
+    },
+    "InvalidRequestError": {
+      "Type": "Fail",
+      "Error": "InvalidRequestError",
+      "Cause": "invalid request parameters"
+    },
+    "TenantNotFoundError": {
+      "Type": "Fail",
+      "Error": "TenantNotFoundError",
+      "Cause": "given tenantId not found"
+    },
+    "IsInputValid?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.tenantId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.tenantId",
+              "IsString": true
+            },
+            {
+              "Variable": "$.providerType",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.providerType",
+              "IsString": true
+            },
+            {
+              "Variable": "$.providerDetails",
+              "IsPresent": true
+            },
+            {
+              "Or": [
+                {
+                  "Variable": "$.providerType",
+                  "StringEquals": "SAML"
+                },
+                {
+                  "Variable": "$.providerType",
+                  "StringEquals": "OIDC"
+                }
+              ]
+            },
+            {
+              "Variable": "$.emailMappingAttribute",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.emailMappingAttribute",
+              "IsString": true
+            }
+          ],
+          "Comment": "Yes",
+          "Next": "GetTenantAuthconfig"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "GetTenantAuthconfig": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.tenantId)",
+          "sk.$": "States.Format('authconfig')"
+        }
+      },
+      "Next": "TenantExists?",
+      "ResultPath": "$.GetTenantAuthConfigResult"
+    },
+    "TenantExists?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.GetTenantAuthConfigResult.Item",
+          "IsPresent": true,
+          "Next": "IdentityProviderSettingExists?",
+          "Comment": "Yes"
+        }
+      ],
+      "Default": "TenantNotFoundError"
+    },
+    "IdentityProviderSettingExists?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.GetTenantAuthConfigResult.Item.federationEnabled.BOOL",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.GetTenantAuthConfigResult.Item.federationEnabled.BOOL",
+              "IsBoolean": true
+            },
+            {
+              "Variable": "$.GetTenantAuthConfigResult.Item.federationEnabled.BOOL",
+              "BooleanEquals": true
+            }
+          ],
+          "Comment": "Yes",
+          "Next": "SettingAlreadyExistsError"
+        }
+      ],
+      "Default": "ParseUserPoolSetting"
+    },
+    "SettingAlreadyExistsError": {
+      "Type": "Fail",
+      "Error": "SettingAlreadyExistsError",
+      "Cause": "Identity provider setting already exists"
+    },
+    "ParseUserPoolSetting": {
+      "Type": "Pass",
+      "Next": "SelectProviderType",
+      "ResultPath": "$.UserPool",
+      "Parameters": {
+        "UserPoolId.$": "$.GetTenantAuthConfigResult.Item.userPoolId.S",
+        "AppClinetId.$": "$.GetTenantAuthConfigResult.Item.appClientId.S",
+        "ProviderName.$": "States.Format('external-idp-{}', $.tenantId)"
+      }
+    },
+    "SelectProviderType": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.providerType",
+              "StringEquals": "SAML"
+            },
+            {
+              "Variable": "$.providerDetails.MetadataURL",
+              "IsPresent": true
+            }
+          ],
+          "Comment": "SAML with MetadataURL",
+          "Next": "SetProviderDetailsParameterForSAMLMetadataURL"
+        },
+        {
+          "And": [
+            {
+              "Variable": "$.providerType",
+              "StringEquals": "SAML"
+            },
+            {
+              "Variable": "$.providerDetails.MetadataFile",
+              "IsPresent": true
+            }
+          ],
+          "Comment": "SAML with MetadataFile",
+          "Next": "SetProviderDetailsParameterForSAMLMetadataFile"
+        },
+        {
+          "Variable": "$.providerType",
+          "StringEquals": "OIDC",
+          "Comment": "OIDC",
+          "Next": "SetProviderDetailsParameterForOIDC"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "SetProviderDetailsParameterForSAMLMetadataURL": {
+      "Type": "Pass",
+      "Next": "CreateIdentityProvider",
+      "ResultPath": "$.ProviderDetailsParameter",
+      "Parameters": {
+        "MetadataURL.$": "$.providerDetails.MetadataURL"
+      }
+    },
+    "SetProviderDetailsParameterForSAMLMetadataFile": {
+      "Type": "Pass",
+      "Next": "CreateIdentityProvider",
+      "ResultPath": "$.ProviderDetailsParameter",
+      "Parameters": {
+        "MetadataFile.$": "$.providerDetails.MetadataFile"
+      }
+    },
+    "SetProviderDetailsParameterForOIDC": {
+      "Type": "Pass",
+      "Next": "CreateIdentityProvider",
+      "ResultPath": "$.ProviderDetailsParameter",
+      "Parameters": {
+        "client_id.$": "$.providerDetails.client_id",
+        "client_secret.$": "$.providerDetails.client_secret",
+        "attributes_request_method.$": "$.providerDetails.attributes_request_method",
+        "oidc_issuer.$": "$.providerDetails.oidc_issuer",
+        "authorize_scopes.$": "$.providerDetails.authorize_scopes"
+      }
+    },
+    "CreateIdentityProvider": {
+      "Type": "Task",
+      "Parameters": {
+        "ProviderDetails.$": "$.ProviderDetailsParameter",
+        "ProviderName.$": "$.UserPool.ProviderName",
+        "ProviderType.$": "$.providerType",
+        "UserPoolId.$": "$.UserPool.UserPoolId",
+        "AttributeMapping": {
+          "custom:emailFromIdp.$": "$.emailMappingAttribute"
+        }
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:createIdentityProvider",
+      "Next": "UpdateUserPoolClient",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "CognitoIdentityProvider.InvalidParameterException"
+          ],
+          "Comment": "InvalidParameter",
+          "ResultPath": "$.error",
+          "Next": "InvalidRequestError"
+        },
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Comment": "Rollback",
+          "ResultPath": "$.error",
+          "Next": "InternalServerError"
+        }
+      ],
+      "ResultPath": null
+    },
+    "UpdateUserPoolClient": {
+      "Type": "Task",
+      "Parameters": {
+        "ClientId.$": "$.UserPool.AppClinetId",
+        "UserPoolId.$": "$.UserPool.UserPoolId",
+        "SupportedIdentityProviders.$": "States.Array($.UserPool.ProviderName)",
+        "AllowedOAuthFlows": [
+          "code"
+        ],
+        "AllowedOAuthScopes": [
+          "openid"
+        ],
+        "AllowedOAuthFlowsUserPoolClient": true,
+        "CallbackURLs.$": "States.Array(States.Format('{}/login/{}', $.Params.Data.URL, $.tenantId))",
+        "LogoutURLs.$": "States.Array(States.Format('{}/logout', $.Params.Data.URL))",
+        "WriteAttributes": ["custom:emailFromIdp"],
+        "ReadAttributes": ["custom:emailFromIdp", "email", "email_verified"],
+        "PreventUserExistenceErrors": "ENABLED"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:updateUserPoolClient",
+      "Next": "DynamoDB UpdateItem",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Comment": "Error",
+          "ResultPath": "$.error",
+          "Next": "DeleteIdentityProvider"
+        }
+      ],
+      "ResultPath": null
+    },
+    "DynamoDB UpdateItem": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.tenantId)",
+          "sk.$": "States.Format('authconfig')"
+        },
+        "UpdateExpression": "SET federationEnabled = :federationEnabled",
+        "ExpressionAttributeValues": {
+          ":federationEnabled": {
+            "BOOL": true
+          }
+        }
+      },
+      "ResultPath": null,
+      "Next": "Success",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "RollbackUserPoolClient"
+        }
+      ]
+    },
+    "RollbackUserPoolClient": {
+      "Type": "Task",
+      "Parameters": {
+        "ClientId.$": "$.UserPool.AppClinetId",
+        "UserPoolId.$": "$.UserPool.UserPoolId"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:updateUserPoolClient",
+      "Next": "DeleteIdentityProvider",
+      "ResultPath": null
+    },
+    "Success": {
+      "Type": "Pass",
+      "End": true,
+      "Parameters": {
+        "tenantId.$": "$.tenantId",
+        "providerType.$": "$.providerType",
+        "providerDetails.$": "$.ProviderDetailsParameter",
+        "emailMappingAttribute.$": "$.emailMappingAttribute"
+      }
+    },
+    "DeleteIdentityProvider": {
+      "Type": "Task",
+      "Next": "InternalServerError",
+      "Parameters": {
+        "ProviderName.$": "$.UserPool.ProviderName",
+        "UserPoolId.$": "$.UserPool.UserPoolId"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:deleteIdentityProvider",
+      "ResultPath": null
+    },
+    "InternalServerError": {
+      "Type": "Fail",
+      "Error": "InternalServerError",
+      "Cause": "server side error"
+    }
+  }
+}

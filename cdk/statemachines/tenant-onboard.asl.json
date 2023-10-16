@@ -1,0 +1,333 @@
+{
+  "Comment": "TenantOnboardService",
+  "StartAt": "GetParams",
+  "States": {
+    "GetParams": {
+      "Type": "Task",
+      "Next": "IsInputValid?",
+      "Parameters": {
+        "Name": "/saas-auth-demo/params"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+      "ResultPath": "$.Params",
+      "ResultSelector": {
+        "Data.$": "States.StringToJson($.Parameter.Value)"
+      }
+    },
+    "IsInputValid?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.tenantId",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.tenantId",
+              "IsString": true
+            },
+            {
+              "Not": {
+                "Variable": "$.tenantId",
+                "StringMatches": "*#*"
+              }
+            },
+            {
+              "Not": {
+                "Variable": "$.tenantId",
+                "StringMatches": "*/*"
+              }
+            },
+            {
+              "Variable": "$.tenantName",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.tenantName",
+              "IsString": true
+            },
+            {
+              "Variable": "$.tier",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.tier",
+              "IsString": true
+            }
+          ],
+          "Next": "TierValidation",
+          "Comment": "Yes"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "TierValidation": {
+      "Type": "Pass",
+      "Next": "IsTierValid?",
+      "Parameters": {
+        "result.$": "States.ArrayContains($.Params.Data.AllowedTiers, $.tier)"
+      },
+      "ResultPath": "$.TierValidationResult"
+    },
+    "IsTierValid?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.TierValidationResult.result",
+          "BooleanEquals": true,
+          "Comment": "Yes",
+          "Next": "GetTenant"
+        }
+      ],
+      "Default": "InvalidRequestError"
+    },
+    "InvalidRequestError": {
+      "Type": "Fail",
+      "Error": "InvalidRequestError",
+      "Cause": "invalid request error"
+    },
+    "GetTenant": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "Key": {
+          "pk.$": "States.Format('tenant#{}', $.tenantId)",
+          "sk.$": "States.Format('metadata')"
+        }
+      },
+      "Next": "TenantNotExists?",
+      "ResultPath": "$.GetTenantResult"
+    },
+    "TenantNotExists?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Not": {
+            "Variable": "$.GetTenantResult.Item",
+            "IsPresent": true
+          },
+          "Comment": "Yes",
+          "Next": "GetAvailableUserPool"
+        }
+      ],
+      "Default": "TenantAlreadyExistsError"
+    },
+    "TenantAlreadyExistsError": {
+      "Type": "Fail",
+      "Error": "TenantAlreadyExistsError",
+      "Cause": "given tenantId already used"
+    },
+    "GetAvailableUserPool": {
+      "Type": "Task",
+      "Next": "CreateNewUserPool?",
+      "Parameters": {
+        "TableName.$": "$.Params.Data.DDBTable",
+        "KeyConditionExpression": "pk = :userpool",
+        "FilterExpression": "numClients < :limit",
+        "ExpressionAttributeValues": {
+          ":userpool": {
+            "S": "userpool"
+          },
+          ":limit": {
+            "N": "300"
+          }
+        }
+      },
+      "Resource": "arn:aws:states:::aws-sdk:dynamodb:query",
+      "ResultPath": "$.GetAvailableUserPoolResult",
+      "ResultSelector": {
+        "Items.$": "$.Items",
+        "Count.$": "$.Count"
+      }
+    },
+    "CreateNewUserPool?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.GetAvailableUserPoolResult.Count",
+          "NumericEquals": 0,
+          "Comment": "Yes",
+          "Next": "ProvisionUsrePool"
+        }
+      ],
+      "Default": "UseExistingUserPool"
+    },
+    "ProvisionUsrePool": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName.$": "$.Params.Data.ProvisionUserPoolLambda"
+      },
+      "ResultSelector": {
+        "Id.$": "$.Payload.Id",
+        "Domain.$": "$.Payload.Domain"
+      },
+      "ResultPath": "$.UserPool",
+      "Next": "CreateUserPoolClient"
+    },
+    "UseExistingUserPool": {
+      "Type": "Pass",
+      "Next": "CreateUserPoolClient",
+      "ResultPath": "$.UserPool",
+      "Parameters": {
+        "Id.$": "$.GetAvailableUserPoolResult.Items[0].sk.S",
+        "Domain.$": "$.GetAvailableUserPoolResult.Items[0].domain.S"
+      }
+    },
+    "CreateUserPoolClient": {
+      "Type": "Task",
+      "Parameters": {
+        "ClientName.$": "$.tenantId",
+        "UserPoolId.$": "$.UserPool.Id",
+        "WriteAttributes": ["custom:emailFromIdp"],
+        "ReadAttributes": ["custom:emailFromIdp", "email", "email_verified"],
+        "PreventUserExistenceErrors": "ENABLED"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:createUserPoolClient",
+      "Next": "SaveTenantSetting",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.Timeout"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Comment": "Error",
+          "Next": "InternalServerError"
+        }
+      ],
+      "ResultPath": "$.AppClient",
+      "ResultSelector": {
+        "Id.$": "$.UserPoolClient.ClientId"
+      }
+    },
+    "DeleteUserPoolClient": {
+      "Type": "Task",
+      "Next": "InternalServerError",
+      "Parameters": {
+        "ClientId.$": "$.AppClient.Id",
+        "UserPoolId.$": "$.UserPool.Id"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cognitoidentityprovider:deleteUserPoolClient"
+    },
+    "SaveTenantSetting": {
+      "Type": "Task",
+      "Next": "Success",
+      "Parameters": {
+        "TransactItems": [
+          {
+            "Put": {
+              "TableName.$": "$.Params.Data.DDBTable",
+              "Item": {
+                "pk": {
+                  "S.$": "States.Format('tenant#{}', $.tenantId)"
+                },
+                "sk": {
+                  "S": "metadata"
+                },
+                "name": {
+                  "S.$": "$.tenantName"
+                },
+                "tier": {
+                  "S.$": "$.tier"
+                }
+              }
+            }
+          },
+          {
+            "Put": {
+              "TableName.$": "$.Params.Data.DDBTable",
+              "Item": {
+                "pk": {
+                  "S.$": "States.Format('tenant#{}', $.tenantId)"
+                },
+                "sk": {
+                  "S": "authconfig"
+                },
+                "userPoolId": {
+                  "S.$": "$.UserPool.Id"
+                },
+                "appClientId": {
+                  "S.$": "$.AppClient.Id"
+                },
+                "region": {
+                  "S.$": "$.Params.Data.Region"
+                },
+                "domain": {
+                  "S.$": "$.UserPool.Domain"
+                },
+                "federationEnabled": {
+                  "Bool": false
+                }
+              }
+            }
+          },
+          {
+            "Update": {
+              "TableName.$": "$.Params.Data.DDBTable",
+              "Key": {
+                "pk": {
+                  "S": "userpool"
+                },
+                "sk": {
+                  "S.$": "$.UserPool.Id"
+                }
+              },
+              "UpdateExpression": "SET numClients = numClients + :n",
+              "ExpressionAttributeValues": {
+                ":n": {
+                  "N": "1"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Resource": "arn:aws:states:::aws-sdk:dynamodb:transactWriteItems",
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.Timeout"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "DeleteUserPoolClient",
+          "ResultPath": "$.Error"
+        }
+      ]
+    },
+    "Success": {
+      "Type": "Pass",
+      "End": true,
+      "Parameters": {
+        "tenantId.$": "$.tenantId",
+        "tenantName.$": "$.tenantName",
+        "tier.$": "$.tier"
+      }
+    },
+    "InternalServerError": {
+      "Type": "Fail",
+      "Error": "InternalServerError",
+      "Cause": "internal server error"
+    }
+  }
+}
