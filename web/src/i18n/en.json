@@ -1,0 +1,184 @@
+{
+  "common": {
+    "profile-model": {
+      "userId": "User ID",
+      "email": "Email address",
+      "displayName": "User name",
+      "role": "Role",
+      "tenant": "Belonging tenant",
+      "type": "User type",
+      "nativeUserType": "Native",
+      "federationUserType": "External ID",
+      "idToken": "ID Token",
+      "claims": "Claims"
+    },
+    "tenant-model": {
+      "tenantId": "Tenant ID",
+      "tenantName": "Tenant name",
+      "tier": "Plan"
+    },
+    "tenant-idp-model": {
+      "setting": "External ID provider settings",
+      "type": "Provider type",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "emailAttributeMapping": "Email attribute mapping",
+      "SAML-ACSURL": "ACS URL",
+      "SAML-applicationURN": "Application URN",
+      "SAML-metadata": "Metadata",
+      "SAML-URL": "Specify metadata URL",
+      "SAML-FILE": "Direct input",
+      "OIDC-callback": "Callback URL",
+      "OIDC-issuer": "ISSUER",
+      "OIDC-clientId": "Client ID",
+      "OIDC-clientSecret": "Client secret",
+      "OIDC-scope": "Scope",
+      "OIDC-attributesRequestMethod": "Request method to userInfo endpoint"
+    },
+    "error": {
+      "unauthenticated": "Authentication required",
+      "permissionDenied": "Insufficient permissions for the operation",
+      "general": "An error occurred"
+    },
+    "modal": {
+      "close": "Close",
+      "cancel": "Cancel",
+      "ok": "OK"
+    },
+    "action": {
+      "signOut": "Sign out"
+    },
+    "table": {
+      "filteringPlaceholder": "Search"
+    },
+    "copy": {
+      "complete": "Copied to clipboard"
+    },
+    "loading": {
+      "text": "Loading..."
+    }
+  },
+  "top-nav": {
+    "menu": {
+      "profile": "Profile",
+      "signOut": "Sign out"
+    }
+  },
+  "sign-in-page": {
+    "general": {
+      "signInTo": "Sign in to",
+      "switchTenant": "Sign in with different tenant",
+      "federatedSignIn": "Sign in with external ID"
+    },
+    "sign-in": {
+      "emailLabel": "Email address",
+      "passwordLabel": "Password",
+      "emailPlaceholder": "your email",
+      "passwordPlaceholder": "********",
+      "buttonLabel": "Sign in",
+      "inProgress": "Signing in",
+      "forgotPassword": "Forgot password?",
+      "unknownUserError": "Incorrect username or password"
+    },
+    "change-password": {
+      "changePassword": "Change password",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm password"
+    },
+    "reset-password": {
+      "header": "Reset password",
+      "email": "Email address",
+      "sendCode": "Send temporary code",
+      "resendCode": "Resend temporary code",
+      "backToSignIn": "Back to sign in",
+      "code": "Code",
+      "submit": "Submit",
+      "sending": "Sending",
+      "changing": "Changing"
+    },
+    "error": {
+      "incorrectUsernameOrPassword": "Incorrect username or password",
+      "passwordMismatch": "Passwords do not match"
+    }
+  },
+  "access-denied-page": {
+    "header": {
+      "text": "Access Denied"
+    },
+    "general": {
+      "errorMessage": "Access denied"
+    }
+  },
+  "profile-page": {
+    "header": {
+      "text": "User Profile"
+    },
+    "action": {
+      "changeProfile": "Change profile"
+    },
+    "modal": {
+      "submitChangeProfile": "OK"
+    }
+  },
+  "tenant-page": {
+    "header": {
+      "text": "Tenant Information"
+    },
+    "menu": {
+      "updateTenant": "Update tenant information"
+    },
+    "modal": {
+      "submitUpdateTenant": "Change"
+    }
+  },
+  "user-manager": {
+    "header": {
+      "text": "User list"
+    },
+    "menu": {
+      "manageUser": "Manage users",
+      "inviteUser": "Invite new user",
+      "changeRole": "Change role",
+      "deleteUser": "Delete user"
+    },
+    "modal": {
+      "submitInviteUser": "Invite",
+      "submitChangeRole": "Change",
+      "submitDeleteUser": "Delete",
+      "confirmChangeRole": "Change role of {{ displayName }} ({{ email }})",
+      "confirmDeleteUser": "Delete the following user?",
+      "deleteUserFailed": "Failed to delete {{ displayName }} ({{ email }}) : {{ reason }}",
+      "deleteUserSucceeded": "Deleted {{ displayName }} ({{ email }})"
+    },
+    "table": {
+      "empty": "No users exist"
+    }
+  },
+  "tenant-idp-page": {
+    "header": {
+      "text": "Manage Identity Provider"
+    },
+    "menu": {
+      "registerIdp": "Register external ID provider",
+      "updateIdp": "Change settings",
+      "deregisterIdp": "Delete settings",
+      "manageIdp": "Manage external ID provider"
+    },
+    "modal": {
+      "submitRegisterIdp": "Register",
+      "submitUpdateIdp": "Update",
+      "submitDeregisterIdp": "Delete",
+      "confirmDeregisterIdp": "Delete external ID provider?"
+    },
+    "general": {
+      "notFound": "No external ID provider settings found"
+    }
+  },
+  "api": {
+    "error": {
+      "unauthenticated": "Authentication required",
+      "permissionDenied": "Insufficient permissions for the operation",
+      "general": "An error occurred"
+    }
+  }
+}
