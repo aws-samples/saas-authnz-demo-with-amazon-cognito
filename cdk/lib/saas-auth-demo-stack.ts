@@ -69,7 +69,7 @@ export class SaaSAuthDemoStack extends cdk.Stack {
     mainTable.grantReadWriteData(cognitoPostConfirmationFunction);
     cognitoPostConfirmationFunction.addPermission('CognitoPermission', {
       principal: new iam.ServicePrincipal('cognito-idp.amazonaws.com'),
-      sourceArn: `arn:aws:cognito-idp:ap-northeast-1:${cdk.Stack.of(this).account}:userpool/*`
+      sourceArn: `arn:aws:cognito-idp:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:userpool/*`
     })
 
     const cognitoPreTokenGenerationFunction = new nodelambda.NodejsFunction(this, 'CognitoPreTokenGenerationFunction', {
@@ -82,7 +82,7 @@ export class SaaSAuthDemoStack extends cdk.Stack {
     mainTable.grantReadData(cognitoPreTokenGenerationFunction);
     cognitoPreTokenGenerationFunction.addPermission('CognitoPermission', {
       principal: new iam.ServicePrincipal('cognito-idp.amazonaws.com'),
-      sourceArn: `arn:aws:cognito-idp:ap-northeast-1:${cdk.Stack.of(this).account}:userpool/*`
+      sourceArn: `arn:aws:cognito-idp:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:userpool/*`
     })
 
     const policySchemaString = readFileSync("./verifiedpermissions/cedarschema.json").toString();
@@ -252,7 +252,7 @@ export class SaaSAuthDemoStack extends cdk.Stack {
     new s3deploy.BucketDeployment(this, 'WebDeploy', {
       sources: [s3deploy.Source.asset('../web', {
         bundling: {
-          image: cdk.DockerImage.fromRegistry('node:18.1-slim'),
+          image: cdk.DockerImage.fromRegistry('node:20.14-slim'),
           environment: {
             npm_config_cache: "/tmp/npm_cache",
             npm_config_update_notifier: "false",
