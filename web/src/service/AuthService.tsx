@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: MIT-0
 
 import { createContext, ReactNode, useState, useContext } from "react";
-import { Auth } from "aws-amplify";
-import { AmplifyUser } from '@aws-amplify/ui';
+import { signOut, fetchAuthSession } from "aws-amplify/auth";
 import { Spinner } from "@cloudscape-design/components";
 import { TenantInfo, getTenantInfo, updateTenantInfo, UpdateTenantInfoParams } from "../api/TenantInfoService";
 import { UserProfile, getTenantUser, updateTenantUserProfile } from "../api/TenantUserService";
@@ -27,7 +26,7 @@ export interface IAuthServiceContext {
   loading: boolean
   updateMyProfile: (params: UpdateMyProfileParams) => Promise<void>
   updateTenantInfo: (params: UpdateTenantInfoParams) => Promise<void>
-  signIn: (user: AmplifyUser) => Promise<void>
+  signIn: () => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -56,18 +55,18 @@ export function AuthServiceProvider({
       const tenantInfo = await updateTenantInfo(params, identity.idToken);
       setIdentity({...identity, tenantInfo});
     },
-    signIn: async (user: AmplifyUser) => {
+    signIn: async () => {
       setLoading(true);
-      const session = user.getSignInUserSession();
-      if(!session) throw Error("failed to fetch user session");
-      const idTokenObj = session.getIdToken();
-      const idToken = idTokenObj.getJwtToken();
-      const idTokenPayload = idTokenObj.payload;
+      const session = await fetchAuthSession();
+      const idTokenObj = session?.tokens?.idToken;
+      const idToken = idTokenObj?.toString();
+      const idTokenPayload = idTokenObj?.payload;
+      if(!session || !idToken || !idTokenPayload) throw Error("failed to fetch user session");
       try {
         const [myProfile, tenantInfo, authConfig] = await Promise.all([
-          getTenantUser({userId: idTokenPayload.sub}, idToken),
+          getTenantUser({userId: idTokenPayload.sub || ""}, idToken),
           getTenantInfo(idToken),
-          getAuthConfig(idTokenPayload.tenantId)
+          getAuthConfig((idTokenPayload as any).tenantId)
         ]);
         setIdentity({ myProfile, tenantInfo, idToken, idTokenPayload, authConfig })
         localStorage.setItem("prev-tenant", tenantInfo.tenantId);
@@ -79,7 +78,7 @@ export function AuthServiceProvider({
     },
     signOut: async () => {
       setLoading(true);
-      await Auth.signOut();
+      await signOut();
       setIdentity(undefined);
       setLoading(false);
     }

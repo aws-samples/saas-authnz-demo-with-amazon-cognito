@@ -22,6 +22,40 @@ export interface AuthConfig {
   }
 }
 
+interface CognitoConfig {
+  Cognito: {
+    userPoolId: string,
+    userPoolClientId: string,
+    loginWith: {
+      oauth: {
+        domain: string,
+        scopes: string[],
+        redirectSignIn: string[],
+        redirectSignOut: string[],
+        responseType: 'code' | 'token',
+      }
+    }
+  }
+}
+
+export function toCognitoConfig(config: AuthConfig): CognitoConfig {
+  return {
+    Cognito: {
+      userPoolId: config.userpool.userPoolId,
+      userPoolClientId: config.userpool.userPoolWebClientId,
+      loginWith: {
+        oauth: {
+          domain: config.userpool.oauth.domain,
+          scopes: config.userpool.oauth.scope,
+          redirectSignIn: [config.userpool.oauth.redirectSignIn],
+          redirectSignOut: [config.userpool.oauth.redirectSignOut],
+          responseType: config.userpool.oauth.responseType as 'code' | 'token',
+        }
+      }
+    }
+  };
+}
+
 export async function getAuthConfig(tenantId: string, controller?: AbortController | undefined): Promise<AuthConfig> {
   const data = await fetchAPI("GET", `/api/authconfig/${tenantId}`, undefined, undefined, controller);
   const userpoolSetting = Object.assign({}, data.userpool);
