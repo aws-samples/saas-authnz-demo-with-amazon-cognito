@@ -3,14 +3,16 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { Amplify } from 'aws-amplify';
+import { I18n } from 'aws-amplify/utils';
+import { signIn, resetPassword, confirmResetPassword, signInWithRedirect, SignInInput } from '@aws-amplify/auth';
 import { Authenticator } from '@aws-amplify/ui-react';
-import { Auth, I18n } from 'aws-amplify';
-import { Button, Flex, Loader, Text, Divider } from '@aws-amplify/ui-react';
+import { Button, Flex, Text, Divider } from '@aws-amplify/ui-react';
+import { Spinner } from "@cloudscape-design/components";
 import { useTranslation, Trans } from 'react-i18next';
-import { getAuthConfig, AuthConfig } from '../api/AuthConfigService';
+import { getAuthConfig, AuthConfig, toCognitoConfig } from '../api/AuthConfigService';
 import UnauthLayout from '../layout/UnauthLayout';
 import { useAuthService } from '../service/AuthService';
-import { AmplifyUser } from '@aws-amplify/ui';
 
 export default function Login() {
   const params = useParams();
@@ -55,10 +57,14 @@ export default function Login() {
   useEffect(() => {
     const cache = localStorage.getItem(`authConfig-cache.${tenantId}`);
     if(cache) {
-      Auth.configure(JSON.parse(cache).userpool)
+      Amplify.configure({
+        Auth: toCognitoConfig(JSON.parse(cache))
+      })
     }
     getAuthConfig(tenantId).then((authConfig)=> {
-      Auth.configure(authConfig.userpool);
+      Amplify.configure({
+        Auth: toCognitoConfig(authConfig)
+      });
       localStorage.setItem(`authConfig-cache.${tenantId}`, JSON.stringify(authConfig));
       setAuthConfig(authConfig);
       setIsReady(true);
@@ -69,14 +75,21 @@ export default function Login() {
   }, [tenantId])
 
   const services = {
-    async handleSignIn({username, password}: {username: string, password: string}) {
-      return await Auth.signIn(`${tenantId}#${username}`, password);
+    async handleSignIn({username, password}: SignInInput) {
+      return await signIn({
+        username: `${tenantId}#${username}`, 
+        password
+      });
     },
-    async handleForgotPassword(username: string) {
-      return await Auth.forgotPassword(`${tenantId}#${username}`);
+    async handleResetPassword({username}: {username: string}) {
+      return await resetPassword({username: `${tenantId}#${username}`});
     },
-    async handleForgotPasswordSubmit({username, code, password}: {username: string, code: string, password: string}) {
-      return await Auth.forgotPasswordSubmit(`${tenantId}#${username}`, code, password);
+    async handleConfirmResetPassword({username, newPassword, confirmationCode}: {username: string, newPassword: string, confirmationCode: string}) {
+      return await confirmResetPassword({
+        username: `${tenantId}#${username}`,
+        confirmationCode: confirmationCode,
+        newPassword: newPassword
+      });
     }
   };
   const components = {
@@ -84,7 +97,7 @@ export default function Login() {
       return authConfig?.flags.federationEnabled ?
         <Flex direction='column'>
           <Divider/>
-          <Button variation="primary" onClick={() => Auth.federatedSignIn({customProvider: `external-idp-${tenantId}`})}>
+          <Button variation="primary" onClick={() => signInWithRedirect({provider: {custom: `external-idp-${tenantId}`}})}>
             <Trans
               i18nKey="sign-in-page.general.federatedSignIn"
             />
@@ -95,13 +108,15 @@ export default function Login() {
     }
   }
   return (
-    <UnauthLayout>
+    !isReady ? 
+      <Spinner/>
+    :
+      <UnauthLayout>
       <Text>
         <Trans
           i18nKey="sign-in-page.general.signInTo"
         /> : {tenantId}
       </Text>
-      {isReady ? 
         <Flex direction='column'>
           <Authenticator hideSignUp={true} components={components} services={services}>
             {({ user }) => <AuthHandler user={user}/>}
@@ -111,18 +126,17 @@ export default function Login() {
               i18nKey="sign-in-page.general.switchTenant"
             />
           </Button>
-        </Flex> : <Loader/>
-      }
+        </Flex>
     </UnauthLayout>
   )
 }
 
 function AuthHandler({ user }: {
-  user: AmplifyUser|undefined
+  user: any|undefined
 }) {
   const { signIn } = useAuthService();
   useEffect(() => {
-    if(user) signIn(user);
+    if(user) signIn();
   }, [user, signIn]);
   return <></>
 }

@@ -27,11 +27,13 @@
 
 レスポンスにはテナントごとのアプリクライアント ID が含まれており、この値を使って Amplify ライブラリのセットアップをしています。
 
-[Login.tsx](/web/src/page/Login.tsx#L43)
+[Login.tsx](/web/src/page/Login.tsx#L64)
 ```tsx
 ...
     getAuthConfig(tenantId).then((authConfig)=> {
-      Auth.configure(authConfig.userpool);
+      Amplify.configure({
+        Auth: toCognitoConfig(authConfig)
+      });
       localStorage.setItem(`authConfig-cache.${tenantId}`, JSON.stringify(authConfig));
       setAuthConfig(authConfig);
       setIsReady(true);
@@ -41,7 +43,7 @@
 
 サインイン用のフォームには Amplify UI Components を利用しています。これにより Cognito API との詳細なやりとりをライブラリ側に任せることができます。
 
-[Login.tsx](/web/src/page/Login.tsx#L88)
+[Login.tsx](/web/src/page/Login.tsx#L121)
 ```html
   <Authenticator hideSignUp={true} components={components} services={services}>
     ...
@@ -56,14 +58,21 @@
 ```typescript
   ...
   const services = {
-    async handleSignIn({username, password}: {username: string, password: string}) {
-      return await Auth.signIn(`${tenantId}#${username}`, password);
+    async handleSignIn({username, password}: SignInInput) {
+      return await signIn({
+        username: `${tenantId}#${username}`, 
+        password
+      });
     },
-    async handleForgotPassword(username: string) {
-      return await Auth.forgotPassword(`${tenantId}#${username}`);
+    async handleResetPassword({username}: {username: string}) {
+      return await resetPassword({username: `${tenantId}#${username}`});
     },
-    async handleForgotPasswordSubmit({username, code, password}: {username: string, code: string, password: string}) {
-      return await Auth.forgotPasswordSubmit(`${tenantId}#${username}`, code, password);
+    async handleConfirmResetPassword({username, newPassword, confirmationCode}: {username: string, newPassword: string, confirmationCode: string}) {
+      return await confirmResetPassword({
+        username: `${tenantId}#${username}`,
+        confirmationCode: confirmationCode,
+        newPassword: newPassword
+      });
     }
   };
   ...

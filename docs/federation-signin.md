@@ -30,31 +30,33 @@ IdP の登録時には外部 IdP 側で保有している値をユーザープ�
 [Login.tsx](/web/src/page/Login.tsx#87)
 ```typescript
 ...
-<Button variation="primary" onClick={() => Auth.federatedSignIn({customProvider: `external-idp-${tenantId}`})}>
+<Button variation="primary" onClick={() => signInWithRedirect({provider: {custom: `external-idp-${tenantId}`}})}>
   <Trans
     i18nKey="sign-in-page.general.federatedSignIn"
   />
 </Button>
 ...
 ```
-[外部 ID でログイン] をクリックすると、Amplify Library の [Auth.federatedSignIn()](https://aws-amplify.github.io/amplify-js/api/classes/authclass.html#federatedsignin) が呼び出され、Cognito の[認可エンドポイント](https://docs.aws.amazon.com/ja_jp/cognito/latest/developerguide/authorization-endpoint.html)にリダイレクトされます。この際、`customProvider`で指定した IdP 名が `identity_provider` パラメーターとして渡され、そのまま IdP のサインインページにリダイレクトされます。
+[外部 ID でログイン] ボタンがクリックされると、`signInWithRedirect()` が呼び出され、Cognito の[認可エンドポイント](https://docs.aws.amazon.com/ja_jp/cognito/latest/developerguide/authorization-endpoint.html)にリダイレクトされます。この際、`provider.custom`で指定した IdP 名が `identity_provider` パラメーターとして渡され、そのまま IdP のサインインページにリダイレクトされます。
 
-[外部 ID でログイン](../saas-auth-frontend/src/App.tsx#L114) ボタンがクリックされると、`Auth.federatedSignIn()` が呼び出され、Cognito の[認可エンドポイント](https://docs.aws.amazon.com/ja_jp/cognito/latest/developerguide/authorization-endpoint.html)にリダイレクトされます。この際、`customProvider`で指定した IdP 名が `identity_provider` パラメーターとして渡され、そのまま IdP のサインインページにリダイレクトされます。
-
-なお、Cognito の認可エンドポイントは `Auth.configure()` で指定した Cognito のドメインにホストされています。Auth.configure() にはバックエンドから取得された値を元に以下のような設定が行われています。
+なお、Cognito の認可エンドポイントは `Amplify.configure()` で指定した Cognito のドメインにホストされています。Amplify.configure() にはバックエンドから取得された値を元に以下のような設定が行われています。
 
 ```tsx
 {
-  region: REGION,
-  userPoolId: USER_POOL_ID,
-  userPoolWebClientId: APP_CLIENT_ID,
-  oauth: {
-    domain: OAUTH_ENDPOINT,
-    scope: ['openid'],
-    redirectSignIn: `${CURRENT_DOMAIN}/login/${tenantId}`,
-    redirectSignOut: `${CURRENT_DOMAIN}/logout`,
-    responseType: 'code',
-  },
+  Auth: {
+    Cognito: {
+      userPoolId: USER_POOL_ID,
+      userPoolClientId: APP_CLIENT_ID,
+      loginWith: {
+        oauth: {
+          domain: OAUTH_ENDPOINT,
+          scopes: ['openid'],
+          redirectSignIn: [`${CURRENT_DOMAIN}/login/${tenantId}`],
+          redirectSignOut: [`${CURRENT_DOMAIN}/logout`],
+          responseType: 'code',
+        },
+      }
+    }
 }
 ```
 
