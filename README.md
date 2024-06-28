@@ -1,74 +1,72 @@
 # SaaS AuthN/Z Demo with Amazon Cognito
 
-SaaS AuthN/Z Demo は SaaS プロダクトにおける AWS 上での認証 / 認可のコンセプトなどを解説し、Amazon Cognito で実現するためのサンプルアプリケーションです。
+The SaaS AuthN/Z Demo explains concepts related to authentication and authorization in SaaS products on AWS, and provides a sample application implemented with Amazon Cognito.
 
-免責事項 : このアプリケーションは [SaaS AuthN/Z Workshop](https://catalog.us-east-1.prod.workshops.aws/workshops/9180bbda-7747-4b8f-ac05-14e7f258fcea) の中で利用されることを前提とした学習用のコンテンツであり、Amazon Cognito や Amazon Verified Permissions の機能や SaaS でのデザインパターンを学習することを目的としています。本番運用での利用は想定していないため、本レポジトリのコード・アセットの一部を自社プロダクトにご活用いただく場合は事前に十分な検討を実施してください。
+**Disclaimer:** This application is intended for educational purposes and is designed to be used within the context of the [SaaS AuthN/Z Workshop](https://catalog.us-east-1.prod.workshops.aws/workshops/9180bbda-7747-4b8f-ac05-14e7f258fcea). It aims to teach the functionalities of Amazon Cognito, Amazon Verified Permissions, and design patterns for SaaS. It is not intended for production use. If you plan to use parts of the code or assets in this repository in your own product, please perform thorough consideration beforehand.
 
-## 目次
-* [コンセプト](#コンセプト)
-* [デプロイ方法](#デプロイ方法)
-* [アーキテクチャ](#アーキテクチャ)
-* [シナリオ](#シナリオ)
-  * [オンボーディング処理の実行](/docs/onboarding.md)
-  * [テナントへのサインイン](/docs/sign-in.md)
-  * [テナントおよびユーザーの管理](/docs/manage-tenant-and-users.md)
-    * [JWT の属性を用いた認可](/docs/authorize.md)
-    * [外部 IdP を用いたサインインの詳細](/docs/federation-signin.md)
-* [環境の削除](#環境の削除)
-* その他
-  * [テナントサービスの詳細](/docs/tenant-service.md)
-  * [Amazon Cognito でのマルチテナント戦略](/docs/cognito-multi-tenancy.md)
+## Table of Contents
+* [Concept](#concept)
+* [Deployment](#deployment)
+* [Architecture](#architecture)
+* [Scenarios](#scenarios)
+  * [Execution of Onboarding Process](/docs/onboarding.md)
+  * [Sign-in to Tenant](/docs/sign-in.md)
+  * [Management of Tenant and Users](/docs/manage-tenant-and-users.md)
+    * [Authorization Using JWT Attributes](/docs/authorize.md)
+    * [Details of Sign-in with External IdP](/docs/federation-signin.md)
+* [Environment Deletion](#environment-deletion)
+* Miscellaneous
+  * [Details of Tenant Service](/docs/tenant-service.md)
+  * [Multi-Tenancy Strategy with Amazon Cognito](/docs/cognito-multi-tenancy.md)
 
-## コンセプト
+## Concept
 
-B2B SaaS アプリケーションの認証・認可の実装においては、通常の Web アプリケーションの認証・認可に比べて追加の考慮事項が必要となります。例えば、利用企業側のセキュリティポリシーに応じて、認証のオプションの提供が求められることがあったり、テナントの管理者が他のユーザーを管理する機能が必要になります。バックエンドアプリケーションではテナント分離や契約プラン、ユーザーロールなどの複数の要素に基づいてアクセス制御を行う必要があります。各種データベースやマイクロサービスに点在する認可のための情報をどのように効率的に取り扱うかも考えなければいけません。
+Implementing authentication and authorization in B2B SaaS applications requires additional considerations compared to regular web application authentication and authorization. For instance, depending on the security policies of the client companies, there might be a need to provide authentication options, and features for administrators of tenants to manage other users. The backend application needs to handle access control based on various elements such as tenant isolation, contract plans, user roles, etc. Efficient handling of information scattered across various databases and microservices for authorization is also crucial.
 
-![AccessPattern](/docs/images/saas-access-control-pattern.png)
+![AccessPattern](/docs/images/saas-access-control-pattern.en.png)
 
-アクセス制御においては、[こちらの記事](https://aws.amazon.com/jp/builders-flash/202108/saas-authorization-implementation-pattern/) で紹介している通り、各種 IdP やデータベースなどに点在しているこれらの情報を最初に JSON Web Token (JWT) に含んだ上でバックエンドに送ることで、バックエンド側の認可処理をシンプルに実現することができます。
+In access control, as introduced in [this article](https://aws.amazon.com/jp/builders-flash/202108/saas-authorization-implementation-pattern/), one can simplify backend authorization processing by initially including information scattered across various IdPs and databases in a JSON Web Token (JWT) and sending it to the backend. This sample application illustrates how to implement these SaaS authentication concepts using Amazon Cognito and Amazon Verified Permissions.
 
-本サンプルアプリケーションではこれらの SaaS での認証のコンセプトについて、Amazon Cognito や Amazon Verified Permissions でどのように実装していくのかの一例を示します。
+## Deployment
 
-## デプロイ方法
+Follow the [deployment instructions](/docs/how-to-deploy.md) to deploy the application.
 
-[デプロイ方法](/docs/how-to-deploy.md)の手順にしたがってデプロイしてください。
-
-## アーキテクチャ
+## Architecture
 
 ![Architecture](/docs/images/architecture.png)
 
-|サービス名|説明|
+| Service Name | Description |
 |--|--|
-|テナントサービス|SaaS の認証やテナント管理に関わるコア機能を司るマイクロサービスです。本デモアプリケーションに存在するテナントサービスの詳細については[こちら](/docs/tenant-service.md)をご参照ください。|
-|アイデンティティサービス<br> (Amazon Cognito)|ユーザーの認証とテナントとの紐付けの機能を提供します。本アプリケーションではテナントごとにアプリケーションクライアントを割り当てる実装を採用しており、メールアドレスとパスワードを利用した認証とテナントごとの外部 IdP を利用した認証をサポートしています。<br>**備考 :** 一つのユーザープール内では、[リソースクォータ](https://docs.aws.amazon.com/ja_jp/cognito/latest/developerguide/limits.html#resource-quotas)に記載がある通り、アプリクライアント数やアイデンティティプロバイダ数の上限が定まっています。デモアプリケーションでは、テナント数がリソースクォータに制約されないように、ユーザープールあたりの外部アイデンティティプロバイダ数のデフォルトクォータである 300 テナントごとに新たなユーザープールが作成されます。詳細については [Amazon Cognito でのマルチテナンシー](/docs/cognito-multi-tenancy.md)をご参照ください。|
-|フロントエンドアプリケーション|認証画面やユーザーの管理画面を提供するフロントエンドアプリケーションです。認証やユーザー・テナント管理のためのAPIおよび画面を提供しています。ユーザー・テナント管理APIは認証済みユーザーのトークンを検証した上で、ユーザーの権限に応じてバックエンドのテナントサービスを呼び出します。本デモアプリケーションでは、Amazon API Gateway の AWS サービス統合とマッピングテンプレートを用いて、リクエストしたユーザーの所属するテナントにスコープを絞った上で直接テナントサービスを呼び出しています。|
+| Tenant Service | Microservice responsible for core functionalities related to SaaS authentication and tenant management. Refer to [here](/docs/tenant-service.md) for details on the tenant service in this demo application. |
+| Identity Service<br> (Amazon Cognito) | Provides authentication and linking functionality between users and tenants. This application adopts an implementation that assigns an application client for each tenant. It supports authentication using email and password, as well as authentication using an external IdP specific to each tenant.<br>**Note:** Within a single user pool, as mentioned in the [resource quotas](https://docs.aws.amazon.com/ja_jp/cognito/latest/developerguide/limits.html#resource-quotas), there are limits on the number of app clients and identity providers. In the demo application, to avoid constraints on the number of tenants due to resource quotas, a new user pool is created for every 300 tenants, which is the default quota for the number of external identity providers per user pool. Refer to [Amazon Cognito Multi-Tenancy](/docs/cognito-multi-tenancy.md) for more details. |
+| Frontend Application | Provides authentication screens and user management screens. It offers APIs and screens for authentication, user, and tenant management. The user and tenant management API, after validating the token of the authenticated user, calls the backend tenant service based on the user's permissions. In this demo application, API Gateway uses AWS service integration and mapping templates to call the tenant service directly, narrowing down the scope to the tenant to which the requesting user belongs. |
 
-## シナリオ
+## Scenarios
 
-デモアプリケーションは以下のシナリオを想定しています。
+The demo application assumes the following scenarios:
 
-1. SaaS 事業者のオペレーターがテナントの環境とテナント内の管理者ユーザーを追加します。
-2. テナントサービスはアイデンティティサービスである Amazon Cognito に管理者ユーザーを追加します。
-3. テナントの管理者ユーザーは Amazon Cognito から招待メールを受け取ります。
-4. テナントの管理者ユーザーは招待メールに記載された URL にアクセスし、フロントエンドアプリケーションのログイン用フォームが表示されます。この時、テナントごとにどのユーザープールやアプリケーションクライアントを利用するかの情報を取得します。
-5. テナントの管理者ユーザーは Amazon Cognito に対し、認証を行い、トークンを取得します。
-6. サインインに成功すると、フロントエンドアプリケーションは、取得したトークンを付与して API を呼び出します。
-7. サインインしたユーザーが要求された API 呼び出しを許可されているかを Lambda Authorizer と Amazon Verified Permissions で検証します。
-8. API 呼び出しが許可されていれば、API Gateway はテナントにスコープを絞った上でバックエンドのサービスを呼び出します。本アプリケーションでは、API Gateway からテナントサービスに対して直接リクエストを行っていますが、API Gateway の後段に配置された Lambda 関数がコントロールプレーンのコアサービスを呼び出すことも一般的です。
+1. The operator of the SaaS provider adds a tenant environment and administrator users within the tenant.
+2. The tenant service adds administrator users to the Amazon Cognito identity service.
+3. The administrator user of the tenant receives an invitation email from Amazon Cognito.
+4. The administrator user of the tenant accesses the URL mentioned in the invitation email, displaying the login form of the frontend application. At this point, information on which user pool and application client to use for each tenant is obtained.
+5. The administrator user of the tenant authenticates with Amazon Cognito and obtains a token.
+6. Upon successful sign-in, the frontend application calls APIs with the acquired token.
+7. The Lambda Authorizer and Amazon Verified Permissions verify whether the signed-in user is allowed to make the requested API call.
+8. If the API call is permitted, API Gateway calls the backend service with the narrowed-down scope to the tenant. In this application, the API Gateway directly requests the tenant service, but it is common for a Lambda function placed behind API Gateway to call core services of the control plane.
 
-各フェーズでの技術的な詳細は以下のドキュメントをご参照ください。
+Refer to the following documents for technical details in each phase:
 
-* [**オンボーディング処理の実行**](/docs/onboarding.md) : 新規テナントおよびユーザーを追加します。上記アーキテクチャ図では (1) - (3) の処理が該当します。
-* [**テナントへのサインイン**](/docs/sign-in.md) :  テナントのユーザーとしてアプリケーションにアクセスし、ユーザープールへのサインイン後、テナントコンテキストを含んだトークンを取得します。上記アーキテクチャ図では (4) - (5) の処理が該当します。
-* [**テナントおよびユーザーの管理**](/docs/manage-tenant-and-users.md) : テナント内の管理者ユーザーとして、バックエンドのAPI呼び出しを行い、テナント内のユーザーの管理を行います。上記アーキテクチャ図では (6) - (8) の処理が該当します。
-  * [**JWT の属性を用いた認可**](/docs/authorize.md) : トークンに埋め込まれたテナントやユーザーの属性を用いることで、許可された範囲のAPIのみが実行されるように制御を行います。
-  * [**外部 IdP によるサインイン**](/docs/federation-signin.md) : テナントの独自の IdP でのサインインを追加します。
+* [**Execution of Onboarding Process**](/docs/onboarding.md): Adds new tenants and users. Corresponds to processes (1) - (3) in the above architecture diagram.
+* [**Sign-in to Tenant**](/docs/sign-in.md): Accesses the application as a user of the tenant, signs in to the user pool, and obtains a token with the tenant context. Corresponds to processes (4) - (5) in the above architecture diagram.
+* [**Management of Tenant and Users**](/docs/manage-tenant-and-users.md): As an administrator user within the tenant, makes backend API calls to manage users within the tenant. Corresponds to processes (6) - (8) in the above architecture diagram.
+  * [**Authorization Using JWT Attributes**](/docs/authorize.md): Controls execution of APIs within the permitted range using attributes embedded in the token.
+  * [**Sign-in with External IdP**](/docs/federation-signin.md): Adds sign-in with the tenant's custom IdP.
 
-## 環境の削除
+## Environment Deletion
 
-* `cdk destroy` コマンドによりスタックを削除してください
-* デモアプリケーションによって作成されたユーザープールを削除してください
-* 連携した外部 IdP の設定情報を削除してください
+* Delete the stack using the `cdk destroy` command.
+* Delete the user pools created by the demo application.
+* Delete the configuration information for the federated external IdP.
 
 ## Security
 
@@ -77,4 +75,3 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 ## License
 
 This library is licensed under the MIT-0 License. See the LICENSE file.
-
