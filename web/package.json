@@ -13,7 +13,7 @@
     "@aws-amplify/ui-react": "6.1.12",
     "@cloudscape-design/components": "3.0.661",
     "@cloudscape-design/global-styles": "1.0.27",
-    "aws-amplify": "6.3.6",
+    "aws-amplify": "6.16.2",
     "i18next": "23.11.5",
     "i18next-browser-languagedetector": "8.0.0",
     "react": "18.3.1",
